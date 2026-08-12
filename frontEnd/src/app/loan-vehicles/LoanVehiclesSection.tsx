@@ -16,6 +16,7 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader, PageBody } from "@/components/layout/PageHeader";
 import LoanReservationForm from "./LoanReservationForm";
+import LoanFleetCalendar from "./LoanFleetCalendar";
 
 type LoanVehicle = {
   id: number;
@@ -108,6 +109,21 @@ export default function LoanVehiclesSection({
         description="Flotte de prêt et réservations"
       />
       <PageBody className="space-y-6">
+        {/* Disponibilité de la flotte — 30 jours glissants */}
+        {vehicles.length > 0 && (
+          <section>
+            <h2 className="text-base font-semibold mb-3">Disponibilité (30 prochains jours)</h2>
+            <LoanFleetCalendar
+              vehicles={vehicles}
+              reservations={reservations}
+              onReservationClick={(id) => {
+                setEditingReservationId(id);
+                setReservationFormOpen(true);
+              }}
+            />
+          </section>
+        )}
+
         {/* Réservations */}
         <section>
           <div className="flex items-center justify-between mb-3">
