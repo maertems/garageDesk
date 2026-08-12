@@ -12,8 +12,6 @@ const tabs: { href: string; label: string; exact?: boolean; extraPrefix?: string
   { href: "/facturation", label: "Documents", exact: true, extraPrefix: "/facturation/documents" },
   { href: "/facturation/factures", label: "Factures" },
   { href: "/facturation/avoirs", label: "Avoirs" },
-  { href: "/facturation/catalogue", label: "Catalogue" },
-  { href: "/facturation/parametres", label: "Paramètres" },
 ];
 
 export default function FacturationLayout({ children }: { children: React.ReactNode }) {

@@ -134,7 +134,7 @@ export default function ParametresPage({ initial }: { initial: CompanySettings |
   return (
     <>
       <PageHeader
-        title="Paramètres facturation"
+        title="Entreprise"
         description="Informations légales de l'émetteur des factures"
       />
       <PageBody>

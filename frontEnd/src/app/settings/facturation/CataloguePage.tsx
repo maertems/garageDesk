@@ -163,7 +163,7 @@ export default function CataloguePage({ isAdmin }: { isAdmin: boolean }) {
   return (
     <>
       <PageHeader
-        title="Catalogue"
+        title="Facturation"
         description="Articles, main d'œuvre et taux de TVA"
         actions={
           isAdmin ? (

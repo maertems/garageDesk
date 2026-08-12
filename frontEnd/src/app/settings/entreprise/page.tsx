@@ -1,5 +1,4 @@
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import { apiJson } from "@/lib/api";
 import ParametresPage from "./ParametresPage";
 
@@ -27,19 +26,10 @@ type CompanySettings = {
   missingMandatoryFields: string[];
 };
 
+// L'accès admin est déjà vérifié par settings/layout.tsx.
 export default async function ParametresServerPage() {
   const cookieStore = await cookies();
   const cookie = cookieStore.toString();
-
-  let user: { role: string };
-  try {
-    user = await apiJson<{ role: string }>("/api/v1/auth/me", cookie);
-  } catch {
-    redirect("/login");
-  }
-  if (user.role !== "admin") {
-    redirect("/facturation");
-  }
 
   let settings: CompanySettings | null = null;
   try {
