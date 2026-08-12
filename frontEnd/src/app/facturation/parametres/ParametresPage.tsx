@@ -166,7 +166,7 @@ export default function ParametresPage({ initial }: { initial: CompanySettings |
               <div className={SECTION_BODY}>
                 <div className="space-y-1.5">
                   <Label htmlFor="ps-name">Raison sociale *</Label>
-                  <Input id="ps-name" value={name} onChange={(e) => setName(e.target.value)} required placeholder="Ex. : WeppesClassics SAS" />
+                  <Input id="ps-name" value={name} onChange={(e) => setName(e.target.value)} required placeholder="Ex. : Mon Garage SAS" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
