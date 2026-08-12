@@ -1,0 +1,17 @@
+# API backend only. MySQL is external (set MYSQL_* to your server).
+# Usage: docker compose up --build
+# Or:    docker compose run --rm -p 7780:80 api
+services:
+  api:
+    build: .
+    ports:
+      - "7780:80"
+    environment:
+      - MYSQL_HOST=${MYSQL_HOST:-host.docker.internal}
+      - MYSQL_PORT=${MYSQL_PORT:-3306}
+      - MYSQL_USER=${MYSQL_USER:-root}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-wpscls}
+      - LOGS_DIR=/app/logs
+    volumes:
+      - ./logs:/app/logs
