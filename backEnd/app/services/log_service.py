@@ -14,8 +14,8 @@ _MAX_BYTES = 10 * 1024 * 1024  # 10 Mo
 _BACKUP_COUNT = 5
 _initialized = False
 
-action_logger = logging.getLogger("wpscls.actions")
-notification_logger = logging.getLogger("wpscls.notifications")
+action_logger = logging.getLogger("garagedesk.actions")
+notification_logger = logging.getLogger("garagedesk.notifications")
 
 
 def _init_loggers() -> None:

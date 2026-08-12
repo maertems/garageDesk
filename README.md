@@ -25,7 +25,7 @@ Le frontend appelle l’API **uniquement via son serveur** (proxy). La variable 
 
 ### 1. Base MySQL
 
-Créer une base (ex. `wpscls`) puis exécuter :
+Créer une base (ex. `garagedesk`) puis exécuter :
 
 ```bash
 cd backEnd

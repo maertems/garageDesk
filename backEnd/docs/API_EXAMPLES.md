@@ -1,4 +1,4 @@
-# Exemples et cas d'usage API WPSCLS
+# Exemples et cas d'usage API GarageDesk
 
 ## Authentification
 

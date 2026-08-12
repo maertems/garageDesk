@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     port: int = Field(default=3306, validation_alias="MYSQL_PORT")
     user: str = Field(default="root", validation_alias="MYSQL_USER")
     password: str = Field(default="", validation_alias="MYSQL_PASSWORD")
-    database: str = Field(default="wpscls", validation_alias="MYSQL_DATABASE")
+    database: str = Field(default="garagedesk", validation_alias="MYSQL_DATABASE")
     sessionCookieName: str = "sessionId"
     sessionHeaderName: str = "X-Session-Id"
     sessionLifetimeSeconds: int = 86400 * 7  # 7 days

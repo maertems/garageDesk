@@ -1,4 +1,4 @@
-# WPSCLS Intranet — Frontend
+# GarageDesk — Frontend
 
 Interface web basée sur **Next.js 14 + Tailwind CSS + shadcn/ui**.
 

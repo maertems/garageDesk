@@ -11,7 +11,7 @@ services:
       - MYSQL_PORT=${MYSQL_PORT:-3306}
       - MYSQL_USER=${MYSQL_USER:-root}
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
-      - MYSQL_DATABASE=${MYSQL_DATABASE:-wpscls}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-garagedesk}
       - LOGS_DIR=/app/logs
     volumes:
       - ./logs:/app/logs

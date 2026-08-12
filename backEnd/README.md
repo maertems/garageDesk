@@ -1,4 +1,4 @@
-# WPSCLS Intranet – Backend
+# GarageDesk – Backend
 
 API REST Python (FastAPI), MySQL, authentification par session.  
 Documentation exploitable pour déploiement (y compris via GitHub).
@@ -17,7 +17,7 @@ Documentation exploitable pour déploiement (y compris via GitHub).
 | MYSQL_PORT       | Port MySQL                                            | 3306        |
 | MYSQL_USER       | Utilisateur MySQL                                     | root        |
 | MYSQL_PASSWORD   | Mot de passe MySQL                                    | (vide)      |
-| MYSQL_DATABASE   | Nom de la base                                        | wpscls      |
+| MYSQL_DATABASE   | Nom de la base                                        | garagedesk  |
 | DISPLAY_TIMEZONE | Fuseau pour les heures dans les notifications (SMS/email) | Europe/Paris |
 
 ## Base de données
