@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import { cn } from "@/lib/utils";
 
 type LoanVehicle = {
@@ -15,11 +15,15 @@ type LoanReservation = {
   loanVehicleId: number;
   startDate: string;
   endDate: string | null;
+  appointmentId?: number | null;
   clientFirstName?: string;
   clientLastName?: string;
+  interventionVehicleBrand?: string | null;
+  interventionVehicleModel?: string | null;
 };
 
 const DAYS_COUNT = 30;
+const LABEL_COL = "180px";
 
 function startOfDay(d: Date) {
   const c = new Date(d);
@@ -49,104 +53,129 @@ export default function LoanFleetCalendar({
 
   const windowStart = days[0];
   const windowEnd = days[days.length - 1];
+  const gridTemplateColumns = `${LABEL_COL} repeat(${DAYS_COUNT}, minmax(22px, 1fr))`;
 
   return (
     <div>
       <div className="rounded-xl border bg-card shadow-card overflow-x-auto">
-        <table className="border-collapse text-xs">
-          <thead>
-            <tr>
-              <th className="sticky left-0 bg-card z-10 text-left font-medium text-muted-foreground px-3 py-2 border-b whitespace-nowrap">
-                Véhicule
-              </th>
-              {days.map((d, i) => {
-                const isToday = i === 0;
-                const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                const isFirstOfMonth = d.getDate() === 1;
-                return (
-                  <th
-                    key={d.toISOString()}
-                    className={cn(
-                      "px-0.5 py-1.5 border-b text-center font-normal text-muted-foreground w-7 min-w-[1.75rem]",
-                      isWeekend && "bg-secondary/40",
-                      isToday && "bg-primary/10 text-primary font-semibold"
-                    )}
-                    title={d.toLocaleDateString("fr-FR", {
-                      weekday: "long",
-                      day: "numeric",
-                      month: "long",
-                    })}
-                  >
-                    <div className="leading-none">{d.getDate()}</div>
-                    <div className="text-[9px] opacity-70 leading-none mt-0.5">
-                      {isFirstOfMonth ? d.toLocaleDateString("fr-FR", { month: "short" }) : " "}
+        <div className="grid min-w-[900px]" style={{ gridTemplateColumns }}>
+          {/* En-tête */}
+          <div
+            className="sticky left-0 bg-card z-20 text-left text-xs font-medium text-muted-foreground px-3 py-2 border-b"
+            style={{ gridColumn: 1, gridRow: 1 }}
+          >
+            Véhicule
+          </div>
+          {days.map((d, i) => {
+            const isToday = i === 0;
+            const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+            const isFirstOfMonth = d.getDate() === 1;
+            return (
+              <div
+                key={d.toISOString()}
+                style={{ gridColumn: i + 2, gridRow: 1 }}
+                className={cn(
+                  "px-0.5 py-1.5 border-b border-r border-border/30 text-center text-[10px] text-muted-foreground",
+                  isWeekend && "bg-secondary/40",
+                  isToday && "bg-primary/10 text-primary font-semibold"
+                )}
+                title={d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
+              >
+                <div className="leading-none">{d.getDate()}</div>
+                <div className="text-[9px] opacity-70 leading-none mt-0.5">
+                  {isFirstOfMonth ? d.toLocaleDateString("fr-FR", { month: "short" }) : " "}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Lignes véhicules */}
+          {vehicles.map((v, rowIdx) => {
+            const row = rowIdx + 2;
+            const vehicleLabel = [v.brand, v.model].filter(Boolean).join(" ") || v.uniqueNumber;
+            const rowBg = rowIdx % 2 === 1 ? "bg-primary/10" : "";
+            const vehicleReservations = reservations.filter(
+              (r) =>
+                r.loanVehicleId === v.id &&
+                startOfDay(new Date(r.startDate)) <= windowEnd &&
+                (r.endDate == null || startOfDay(new Date(r.endDate)) >= windowStart)
+            );
+            return (
+              <Fragment key={v.id}>
+                <div
+                  key={`label-${v.id}`}
+                  style={{ gridColumn: 1, gridRow: row }}
+                  className={cn(
+                    "sticky left-0 z-20 px-3 py-2 border-b whitespace-nowrap text-xs font-medium",
+                    rowBg || "bg-card"
+                  )}
+                >
+                  {vehicleLabel}
+                  <span className="text-muted-foreground font-normal"> — {v.licensePlate}</span>
+                </div>
+                {days.map((d, i) => {
+                  const isToday = i === 0;
+                  const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+                  return (
+                    <div
+                      key={`cell-${v.id}-${i}`}
+                      style={{ gridColumn: i + 2, gridRow: row }}
+                      className={cn(
+                        "border-b border-r border-border/30 h-9",
+                        isToday && "ring-1 ring-inset ring-primary/40",
+                        isWeekend ? "bg-secondary/20" : rowBg
+                      )}
+                    />
+                  );
+                })}
+                {vehicleReservations.map((r) => {
+                  const start = startOfDay(new Date(r.startDate));
+                  const end = r.endDate ? startOfDay(new Date(r.endDate)) : windowEnd;
+                  const startIdx = Math.max(
+                    0,
+                    Math.round((start.getTime() - windowStart.getTime()) / 86400000)
+                  );
+                  const endIdx = Math.min(
+                    DAYS_COUNT - 1,
+                    Math.round((end.getTime() - windowStart.getTime()) / 86400000)
+                  );
+                  const clientName = [r.clientFirstName, r.clientLastName].filter(Boolean).join(" ");
+                  const interventionVehicle = [r.interventionVehicleBrand, r.interventionVehicleModel]
+                    .filter(Boolean)
+                    .join(" ");
+                  const tooltip = [
+                    clientName,
+                    r.appointmentId && interventionVehicle ? `Intervention : ${interventionVehicle}` : null,
+                    `Du ${new Date(r.startDate).toLocaleDateString("fr-FR")}${
+                      r.endDate ? ` au ${new Date(r.endDate).toLocaleDateString("fr-FR")}` : " (en cours)"
+                    }`,
+                  ]
+                    .filter(Boolean)
+                    .join(" — ");
+                  return (
+                    <div
+                      key={`res-${r.id}`}
+                      style={{ gridColumn: `${startIdx + 2} / ${endIdx + 3}`, gridRow: row }}
+                      className="relative z-10 m-1 rounded-md bg-amber-500/90 dark:bg-amber-600/90 text-white shadow-sm hover:shadow-md flex items-center px-1.5 text-[11px] font-medium overflow-hidden whitespace-nowrap cursor-pointer transition-shadow"
+                      title={tooltip}
+                      onClick={onReservationClick ? () => onReservationClick(r.id) : undefined}
+                    >
+                      <span className="truncate">{clientName}</span>
                     </div>
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {vehicles.map((v, idx) => {
-              const vehicleLabel = [v.brand, v.model].filter(Boolean).join(" ") || v.uniqueNumber;
-              const rowBg = idx % 2 === 1 ? "bg-primary/10" : "";
-              const vehicleReservations = reservations.filter(
-                (r) =>
-                  r.loanVehicleId === v.id &&
-                  startOfDay(new Date(r.startDate)) <= windowEnd &&
-                  (r.endDate == null || startOfDay(new Date(r.endDate)) >= windowStart)
-              );
-              return (
-                <tr key={v.id} className={rowBg}>
-                  <td className="sticky left-0 bg-inherit z-10 px-3 py-1.5 border-b whitespace-nowrap font-medium">
-                    {vehicleLabel}
-                    <span className="text-muted-foreground font-normal"> — {v.licensePlate}</span>
-                  </td>
-                  {days.map((d, i) => {
-                    const isToday = i === 0;
-                    const res = vehicleReservations.find((r) => {
-                      const start = startOfDay(new Date(r.startDate));
-                      const end = r.endDate ? startOfDay(new Date(r.endDate)) : windowEnd;
-                      return d >= start && d <= end;
-                    });
-                    return (
-                      <td
-                        key={d.toISOString()}
-                        onClick={res && onReservationClick ? () => onReservationClick(res.id) : undefined}
-                        className={cn(
-                          "border-b h-7 w-7 min-w-[1.75rem]",
-                          isToday && "ring-1 ring-inset ring-primary/50",
-                          res
-                            ? "bg-amber-400/70 dark:bg-amber-600/60 cursor-pointer hover:bg-amber-400"
-                            : rowBg
-                        )}
-                        title={
-                          res
-                            ? `${[res.clientFirstName, res.clientLastName].filter(Boolean).join(" ")} — du ${new Date(
-                                res.startDate
-                              ).toLocaleDateString("fr-FR")}${
-                                res.endDate
-                                  ? ` au ${new Date(res.endDate).toLocaleDateString("fr-FR")}`
-                                  : " (en cours)"
-                              }`
-                            : undefined
-                        }
-                      />
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                  );
+                })}
+              </Fragment>
+            );
+          })}
+        </div>
       </div>
       <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-sm bg-amber-400/70 dark:bg-amber-600/60" />
+          <span className="inline-block h-3 w-3 rounded-sm bg-amber-500/90 dark:bg-amber-600/90" />
           Réservé
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-sm ring-1 ring-inset ring-primary/50" />
+          <span className="inline-block h-3 w-3 rounded-sm ring-1 ring-inset ring-primary/40" />
           Aujourd&apos;hui
         </span>
       </div>

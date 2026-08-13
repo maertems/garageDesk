@@ -32,12 +32,15 @@ type LoanReservation = {
   clientId: number;
   startDate: string;
   endDate: string | null;
+  appointmentId?: number | null;
   loanVehicleUniqueNumber?: string;
   loanVehicleLicensePlate?: string;
   loanVehicleBrand?: string;
   loanVehicleModel?: string;
   clientFirstName?: string;
   clientLastName?: string;
+  interventionVehicleBrand?: string | null;
+  interventionVehicleModel?: string | null;
 };
 
 function formatLoanVehicleDisplay(r: LoanReservation): string {
@@ -112,7 +115,18 @@ export default function LoanVehiclesSection({
         {/* Disponibilité de la flotte — 30 jours glissants */}
         {vehicles.length > 0 && (
           <section>
-            <h2 className="text-base font-semibold mb-3">Disponibilité (30 prochains jours)</h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-semibold">Disponibilité (30 prochains jours)</h2>
+              <Button
+                onClick={() => {
+                  setEditingReservationId(null);
+                  setReservationFormOpen(true);
+                }}
+              >
+                <Plus className="h-4 w-4" />
+                Nouvelle réservation
+              </Button>
+            </div>
             <LoanFleetCalendar
               vehicles={vehicles}
               reservations={reservations}
@@ -126,18 +140,7 @@ export default function LoanVehiclesSection({
 
         {/* Réservations */}
         <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-semibold">Réservations</h2>
-            <Button
-              onClick={() => {
-                setEditingReservationId(null);
-                setReservationFormOpen(true);
-              }}
-            >
-              <Plus className="h-4 w-4" />
-              Nouvelle réservation
-            </Button>
-          </div>
+          <h2 className="text-base font-semibold mb-3">Réservations</h2>
           {reservations.length === 0 ? (
             <EmptyState
               icon={<CalendarRange className="h-5 w-5" />}

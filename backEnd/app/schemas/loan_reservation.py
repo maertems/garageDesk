@@ -58,3 +58,5 @@ class LoanReservationWithJoinsResponse(LoanReservationResponse):
     clientFirstName: Optional[str] = None
     clientLastName: Optional[str] = None
     appointmentId: Optional[int] = None
+    interventionVehicleBrand: Optional[str] = None
+    interventionVehicleModel: Optional[str] = None

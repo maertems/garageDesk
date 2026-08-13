@@ -38,10 +38,13 @@ def list_loan_reservations(
                    lv.uniqueNumber AS loanVehicleUniqueNumber,
                    lv.licensePlate AS loanVehicleLicensePlate,
                    lv.brand AS loanVehicleBrand, lv.model AS loanVehicleModel,
-                   c.firstName AS clientFirstName, c.lastName AS clientLastName
+                   c.firstName AS clientFirstName, c.lastName AS clientLastName,
+                   av.brand AS interventionVehicleBrand, av.model AS interventionVehicleModel
             FROM loanReservations lr
             JOIN loanVehicles lv ON lv.id = lr.loanVehicleId
             JOIN clients c ON c.id = lr.clientId
+            LEFT JOIN appointments a ON a.id = lr.appointmentId
+            LEFT JOIN vehicles av ON av.id = a.vehicleId
             WHERE {where}
             ORDER BY lr.startDate DESC
             """,
@@ -61,10 +64,13 @@ def get_loan_reservation(reservation_id: int, current_user: dict = Depends(get_c
                    lv.uniqueNumber AS loanVehicleUniqueNumber,
                    lv.licensePlate AS loanVehicleLicensePlate,
                    lv.brand AS loanVehicleBrand, lv.model AS loanVehicleModel,
-                   c.firstName AS clientFirstName, c.lastName AS clientLastName
+                   c.firstName AS clientFirstName, c.lastName AS clientLastName,
+                   av.brand AS interventionVehicleBrand, av.model AS interventionVehicleModel
             FROM loanReservations lr
             JOIN loanVehicles lv ON lv.id = lr.loanVehicleId
             JOIN clients c ON c.id = lr.clientId
+            LEFT JOIN appointments a ON a.id = lr.appointmentId
+            LEFT JOIN vehicles av ON av.id = a.vehicleId
             WHERE lr.id = %s
             """,
             (reservation_id,),
