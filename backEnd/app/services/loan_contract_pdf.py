@@ -6,16 +6,18 @@ le français), A4. Les helpers y sont réutilisés plutôt que recopiés.
 API publique :
   generate_loan_contract_pdf(res, vehicle, client, company, damages, terms) → bytes
 
-Le contrat comporte deux schémas de la voiture :
-  * « État au départ » — les dégâts enregistrés sur le véhicule sont pré-imprimés,
-    sous forme de marqueurs numérotés renvoyant à un tableau ;
-  * « Constat de retour » — le même schéma, vierge, à annoter au stylo.
+Le contrat tient sur une page. Sa partie basse est en deux colonnes séparées par
+un filet vertical — état de départ à gauche, état de restitution à droite — et
+chacune porte sa date, son kilométrage, sa jauge de carburant, un schéma du
+véhicule, un cadre d'observations, une date et une signature. Seul le schéma de
+départ reçoit les dégâts enregistrés en base, sous forme de points marqués de
+l'initiale de leur nature (R/E/B/M) ; celui de restitution est vierge, à annoter
+au stylo. Les conditions du prêt ferment le document : leur longueur est libre,
+c'est donc le seul élément susceptible de déborder sur un second feuillet.
 
 Limite assumée du schéma : une vue de dessus ne montre pas l'axe vertical d'un
 élément (le haut d'une portière n'est pas distinguable de son bas). La grille 3×3
-sert donc de grille de placement dans l'empreinte de l'élément, et la case exacte
-est énoncée en clair dans le tableau. C'est la convention des constats papier :
-marqueurs numérotés + tableau descriptif.
+sert donc de grille de placement dans l'empreinte de l'élément.
 """
 
 import io
@@ -30,8 +32,6 @@ from app.services.billing_pdf import (
     PAGE_H,
     ML,
     MR,
-    MT,
-    MB,
     CW,
     BLUE,
     GRAY_BG,
@@ -159,22 +159,10 @@ _ZONE_CAPTIONS = {
 }
 
 
-def _eighths(v) -> str:
-    """Jauge de carburant en huitièmes : 5 → « 5/8 ». Vide si inconnue.
-
-    Pas de tiret de remplissage : au départ comme au retour, une valeur absente
-    laisse la place blanche, à remplir à la main sur le papier.
-    """
-    if v is None:
-        return ""
-    try:
-        return f"{int(v)}/8"
-    except (TypeError, ValueError):
-        return ""
-
 
 def _km(v) -> str:
-    """Kilométrage espacé par milliers. Vide si inconnu (cf. _eighths)."""
+    """Kilométrage espacé par milliers. Vide si inconnu : pas de tiret de
+    remplissage, la place reste blanche pour une saisie à la main."""
     if v is None:
         return ""
     try:
@@ -315,6 +303,61 @@ def _draw_car(
     return height
 
 
+def _fuel_gauge(c: canvas.Canvas, x: float, y_top: float, width: float, level) -> float:
+    """Jauge de carburant, même dessin que FuelGauge.tsx de la fiche de réservation.
+
+    Huit segments séparés par trois repères sombres — vide, moitié, plein — et
+    remplis jusqu'au niveau. Les proportions viennent du composant (repère 6 px,
+    segment 28 px, hauteur 36 px), pour que le papier et l'écran montrent la même
+    chose. Niveau inconnu : jauge vide, à noircir à la main.
+
+    Retourne la hauteur totale occupée, libellés E/½/F compris.
+    """
+    unit = width / 242.0
+    tick_w = 6 * unit
+    seg_w = 28 * unit
+    h = 36 * unit
+    y = y_top - h
+
+    try:
+        lvl = int(level) if level is not None else 0
+    except (TypeError, ValueError):
+        lvl = 0
+
+    # Cadre général
+    c.setFillColor(colors.white)
+    c.setStrokeColor(GRAY_LINE)
+    c.setLineWidth(0.4)
+    c.roundRect(x, y, width, h, 0.5 * mm, fill=1, stroke=1)
+
+    cx = x
+    tick_centers: list[float] = []
+    for group in (0, 1):
+        # Repère sombre (E, puis ½, puis F après la seconde série)
+        c.setFillColor(GRAY_TXT)
+        c.rect(cx, y, tick_w, h, fill=1, stroke=0)
+        tick_centers.append(cx + tick_w / 2)
+        cx += tick_w
+        for i in range(1, 5):
+            seg = group * 4 + i
+            c.setFillColor(BLUE if seg <= lvl else colors.white)
+            c.setStrokeColor(GRAY_LINE)
+            c.setLineWidth(0.3)
+            c.rect(cx, y, seg_w, h, fill=1, stroke=1)
+            cx += seg_w
+    c.setFillColor(GRAY_TXT)
+    c.rect(cx, y, tick_w, h, fill=1, stroke=0)
+    tick_centers.append(cx + tick_w / 2)
+
+    # Libellés sous les trois repères
+    c.setFont("Helvetica-Bold", 5)
+    c.setFillColor(GRAY_MUTED)
+    for center, label in zip(tick_centers, ("E", "½", "F")):
+        c.drawCentredString(center, y - 3 * mm, label)
+
+    return h + 4 * mm
+
+
 def _wrap_hard(c: canvas.Canvas, text: str, font: str, size: float, max_w: float) -> list[str]:
     """Comme _wrap, mais coupe aussi les mots plus larges que la colonne.
 
@@ -343,14 +386,6 @@ def _wrap_hard(c: canvas.Canvas, text: str, font: str, size: float, max_w: float
 
 
 
-
-def _section_title(s: _State, title: str) -> None:
-    s.need(14 * mm)
-    s.move(6 * mm)
-    s.c.setFillColor(GRAY_BG)
-    s.c.rect(ML, s.y - 1.5 * mm, CW, 6 * mm, fill=1, stroke=0)
-    s.text(ML + 2 * mm, title.upper(), font="Helvetica-Bold", size=8, color=BLUE)
-    s.move(7 * mm)
 
 
 def _kv_row(s: _State, pairs: list[tuple[str, str]]) -> None:
@@ -417,7 +452,7 @@ def _signature_box(c: canvas.Canvas, x: float, y_top: float, w: float) -> float:
     c.setFont("Helvetica", 6.5)
     c.setFillColor(GRAY_MUTED)
     c.drawString(x, y, "SIGNATURE")
-    box_h = 13 * mm
+    box_h = 12 * mm
     c.setStrokeColor(GRAY_LINE)
     c.rect(x, y - 2 * mm - box_h, w, box_h, fill=0, stroke=1)
     return y - 2 * mm - box_h
@@ -445,16 +480,16 @@ def generate_loan_contract_pdf(
 
     # ── Bandeau ───────────────────────────────────────────────────────────────
     c.setFillColor(BLUE)
-    c.rect(0, PAGE_H - 24 * mm, PAGE_W, 24 * mm, fill=1, stroke=0)
+    c.rect(0, PAGE_H - 21 * mm, PAGE_W, 21 * mm, fill=1, stroke=0)
     c.setFillColor(colors.white)
     c.setFont("Helvetica-Bold", 17)
-    c.drawString(ML, PAGE_H - 12 * mm, "CONTRAT DE PRÊT DE VÉHICULE")
+    c.drawString(ML, PAGE_H - 11 * mm, "CONTRAT DE PRÊT DE VÉHICULE")
     c.setFont("Helvetica", 8)
-    c.drawString(ML, PAGE_H - 18.5 * mm, "Véhicule de courtoisie mis à disposition")
+    c.drawString(ML, PAGE_H - 16.5 * mm, "Véhicule de courtoisie mis à disposition")
     c.setFont("Helvetica-Bold", 10)
-    c.drawRightString(PAGE_W - MR, PAGE_H - 12 * mm, f"N° {_s(res.get('id'))}")
+    c.drawRightString(PAGE_W - MR, PAGE_H - 11 * mm, f"N° {_s(res.get('id'))}")
 
-    s.y = PAGE_H - 29 * mm
+    s.y = PAGE_H - 25 * mm
 
     # ── Prêteur / Emprunteur ──────────────────────────────────────────────────
     col2 = ML + CW / 2 + 5 * mm
@@ -490,18 +525,24 @@ def generate_loan_contract_pdf(
     for row in garage_rows:
         if row:
             c.drawString(ML, y_l, row)
-            y_l -= 4 * mm
+            y_l -= 3.7 * mm
     for row in client_rows:
         if row:
             c.drawString(col2, y_r, row)
-            y_r -= 4 * mm
+            y_r -= 3.7 * mm
 
     s.y = min(y_l, y_r) - 1 * mm
 
     # ── Véhicule prêté ────────────────────────────────────────────────────────
     # Le numéro de parc a été retiré : la plaque et le couple marque/modèle
     # identifient le véhicule sans ambiguïté pour l'emprunteur.
-    _section_title(s, "Véhicule prêté")
+    # Titre compact : un bandeau de section pleine largeur coûtait 13 mm de haut,
+    # trop cher en tête de page pour un bloc d'une seule ligne.
+    s.move(4 * mm)
+    s.text(ML, "VÉHICULE PRÊTÉ", font="Helvetica-Bold", size=7, color=BLUE)
+    s.move(1.5 * mm)
+    s.hrule()
+    s.move(4.5 * mm)
     brand_model = " ".join(
         filter(None, [_s(vehicle.get("brand")), _s(vehicle.get("model"))])
     ).strip()
@@ -527,22 +568,33 @@ def generate_loan_contract_pdf(
     c.drawString(left_x + 2 * mm, section_top - 4.2 * mm, "ÉTAT DE DÉPART")
     c.drawString(right_x + 2 * mm, section_top - 4.2 * mm, "ÉTAT DE RESTITUTION")
 
-    y = section_top - 11 * mm
-    col_top = y
+    y = section_top - 9.5 * mm
 
     # Relevés : mêmes intitulés de part et d'autre, valeurs vides quand inconnues
     yl = _column_field(c, left_x, y, "Date", _date(res.get("startDate")))
     yl = _column_field(c, left_x, yl, "Kilométrage", _km(res.get("startMileage")))
-    yl = _column_field(c, left_x, yl, "Carburant", _eighths(res.get("fuelLevelEighths")))
 
     yr = _column_field(c, right_x, y, "Date", _date(res.get("endDate")))
     yr = _column_field(c, right_x, yr, "Kilométrage", _km(res.get("endMileage")))
-    yr = _column_field(c, right_x, yr, "Carburant", _eighths(res.get("endFuelLevelEighths")))
 
-    y = min(yl, yr) - 3 * mm
+    # Carburant : la jauge dessinée, comme dans la fiche de réservation. Le libellé
+    # garde son alignement, la jauge prend la place de la valeur.
+    y_fuel = min(yl, yr)
+    gauge_w = 40 * mm
+    for x0, lvl in (
+        (left_x, res.get("fuelLevelEighths")),
+        (right_x, res.get("endFuelLevelEighths")),
+    ):
+        c.setFont("Helvetica", 6.5)
+        c.setFillColor(GRAY_MUTED)
+        c.drawString(x0, y_fuel, "CARBURANT")
+        gauge_h = _fuel_gauge(c, x0 + 26 * mm, y_fuel + 2.6 * mm, gauge_w, lvl)
+
+    # Une ligne sautée entre le carburant et les dessins
+    y = y_fuel - gauge_h - 5 * mm
 
     # Les deux schémas, côte à côte, centrés dans leur colonne
-    diagram_w = 34 * mm
+    diagram_w = 38 * mm
     diagram_x_left = left_x + (col_w - diagram_w) / 2
     diagram_x_right = right_x + (col_w - diagram_w) / 2
     diagram_h = _draw_car(c, diagram_x_left, y, diagram_w, damages)
@@ -562,7 +614,7 @@ def generate_loan_contract_pdf(
     y -= 3.5 * mm
 
     # Espace commentaire, un par état
-    box_h = 18 * mm
+    box_h = 16 * mm
     _comment_box(c, left_x, y, col_w, box_h)
     _comment_box(c, right_x, y, col_w, box_h)
     y -= box_h + 5 * mm
@@ -585,8 +637,8 @@ def generate_loan_contract_pdf(
     # Texte libre saisi par le garage : sa longueur décide seule d'un éventuel
     # second feuillet, le corps du contrat tenant sur une page.
     if terms and terms.strip():
-        # Titre compact plutôt que _section_title (13 mm de haut) : chaque
-        # millimètre gagné ici est une ligne de clauses de plus sur la page.
+        # Titre compact : chaque millimètre gagné ici est une ligne de clauses
+        # de plus sur la page.
         s.move(4 * mm)
         s.text(ML, "CONDITIONS DU PRÊT", font="Helvetica-Bold", size=7, color=BLUE)
         s.move(1.5 * mm)
@@ -600,7 +652,7 @@ def generate_loan_contract_pdf(
             for line in _wrap_hard(c, paragraph, "Helvetica", 6.5, CW - 4 * mm):
                 s.need(5 * mm)
                 s.text(ML + 2 * mm, line, size=6.5)
-                s.move(3.1 * mm)
+                s.move(3 * mm)
 
     c.showPage()
     c.save()
