@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Plus, Trash2, KeyRound, CalendarRange, ChevronRight } from "lucide-react";
+import { Plus, Trash2, KeyRound, CalendarRange, ChevronLeft, ChevronRight } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -44,6 +45,33 @@ type LoanReservation = {
   interventionVehicleModel?: string | null;
 };
 
+const RESERVATIONS_PER_PAGE = 10;
+
+// Aligne la hauteur de ligne des tableaux sur les 36 px du calendrier. Le
+// padding vertical des cellules doit être annulé, sinon il s'ajoute à `h-9` ;
+// les boutons d'action sont réduits à 28 px pour la même raison (un bouton
+// `size="icon"` fait 36 px et repoussait la ligne au-delà).
+const ROW_HEIGHT = "[&_tbody_tr]:h-9 [&_td]:py-0";
+
+function startOfDayMs(value: string | Date): number {
+  const d = new Date(value);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+// Statut déduit des dates, en gardant la même occupation que le calendrier :
+// une réservation dont la fin est aujourd'hui immobilise encore le véhicule,
+// elle reste donc « en cours ». Sans date de fin, elle l'est jusqu'à clôture.
+function reservationStatus(r: LoanReservation, todayMs: number) {
+  if (startOfDayMs(r.startDate) > todayMs) {
+    return { label: "À venir", variant: "default" as const };
+  }
+  if (r.endDate != null && startOfDayMs(r.endDate) < todayMs) {
+    return { label: "Terminée", variant: "secondary" as const };
+  }
+  return { label: "En cours", variant: "warning" as const };
+}
+
 // Marque/modèle et immatriculation séparés, la case « Véhicule » les affichant
 // aux deux extrémités. Sans marque/modèle, l'immatriculation (ou à défaut le
 // numéro unique) devient le libellé principal.
@@ -66,8 +94,17 @@ export default function LoanVehiclesSection({
   const [reservationFormOpen, setReservationFormOpen] = useState(false);
   const [editingReservationId, setEditingReservationId] = useState<number | null>(null);
   const [fleetOpen, setFleetOpen] = useState(false);
+  const [reservationPage, setReservationPage] = useState(0);
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  const todayMs = startOfDayMs(new Date());
+  const pageCount = Math.max(1, Math.ceil(reservations.length / RESERVATIONS_PER_PAGE));
+  // Borné à chaque rendu : une suppression ou un rechargement peut raccourcir la
+  // liste alors qu'on est sur la dernière page.
+  const currentPage = Math.min(reservationPage, pageCount - 1);
+  const pageStart = currentPage * RESERVATIONS_PER_PAGE;
+  const pagedReservations = reservations.slice(pageStart, pageStart + RESERVATIONS_PER_PAGE);
 
   useEffect(() => {
     fetch("/api/proxy/loanVehicles")
@@ -152,7 +189,7 @@ export default function LoanVehiclesSection({
             />
           ) : (
             <div className="rounded-xl border bg-card shadow-card overflow-hidden">
-              <Table className="text-xs">
+              <Table className={`text-xs ${ROW_HEIGHT}`}>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="px-3" style={{ width: VEHICLE_COL }}>
@@ -161,11 +198,12 @@ export default function LoanVehiclesSection({
                     <TableHead>Client</TableHead>
                     <TableHead>Début</TableHead>
                     <TableHead>Fin</TableHead>
+                    <TableHead>Statut</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {reservations.map((r, idx) => (
+                  {pagedReservations.map((r, idx) => (
                     <TableRow
                       key={r.id}
                       className={`cursor-pointer ${idx % 2 === 1 ? "bg-primary/10 hover:bg-primary/15" : "hover:bg-accent/40"}`}
@@ -186,7 +224,13 @@ export default function LoanVehiclesSection({
                       <TableCell className="text-muted-foreground tabular-nums">
                         {r.endDate
                           ? new Date(r.endDate).toLocaleDateString("fr-FR")
-                          : <span className="text-amber-600 font-medium">en cours</span>}
+                          : <span className="opacity-50">—</span>}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const status = reservationStatus(r, todayMs);
+                          return <Badge variant={status.variant}>{status.label}</Badge>;
+                        })()}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
@@ -197,7 +241,7 @@ export default function LoanVehiclesSection({
                             e.stopPropagation();
                             deleteReservation(r.id);
                           }}
-                          className="text-muted-foreground hover:text-destructive"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
                           aria-label="Supprimer"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -207,6 +251,40 @@ export default function LoanVehiclesSection({
                   ))}
                 </TableBody>
               </Table>
+              {pageCount > 1 && (
+                <div className="flex items-center justify-between border-t px-3 py-2 text-xs text-muted-foreground">
+                  <span className="tabular-nums">
+                    {pageStart + 1}–{pageStart + pagedReservations.length} sur {reservations.length}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      disabled={currentPage === 0}
+                      onClick={() => setReservationPage(currentPage - 1)}
+                      aria-label="Page précédente"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="tabular-nums px-1">
+                      {currentPage + 1} / {pageCount}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      disabled={currentPage >= pageCount - 1}
+                      onClick={() => setReservationPage(currentPage + 1)}
+                      aria-label="Page suivante"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </section>
@@ -243,7 +321,7 @@ export default function LoanVehiclesSection({
                 />
               ) : (
                 <div className="rounded-xl border bg-card shadow-card overflow-hidden">
-                  <Table>
+                  <Table className={ROW_HEIGHT}>
                     <TableHeader>
                       <TableRow>
                         <TableHead>N°</TableHead>
@@ -275,7 +353,7 @@ export default function LoanVehiclesSection({
                               variant="ghost"
                               size="icon"
                               onClick={() => deleteVehicle(v.id)}
-                              className="text-muted-foreground hover:text-destructive"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
                               aria-label="Supprimer"
                             >
                               <Trash2 className="h-4 w-4" />
