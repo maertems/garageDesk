@@ -116,7 +116,7 @@ export default function LoanFleetCalendar({
                   <div
                     key={`cell-${v.id}-${i}`}
                     style={{ gridColumn: i + 2, gridRow: row }}
-                    className={cn("border-b border-r border-border/30 h-[34px]", rowBg)}
+                    className={cn("border-b border-r border-border/30 h-9", rowBg)}
                   />
                 ))}
                 {vehicleReservations.map((r) => {
@@ -147,7 +147,7 @@ export default function LoanFleetCalendar({
                     <div
                       key={`res-${r.id}`}
                       style={{ gridColumn: `${startIdx + 2} / ${endIdx + 3}`, gridRow: row }}
-                      className="relative z-10 m-1 rounded-md bg-sky-200/90 dark:bg-sky-700/60 text-sky-900 dark:text-sky-50 shadow-sm hover:shadow-md flex items-center px-1.5 text-[11px] font-medium overflow-hidden whitespace-nowrap cursor-pointer transition-shadow"
+                      className="relative z-10 mx-1 my-[5px] rounded-md bg-sky-200/90 dark:bg-sky-700/60 text-sky-900 dark:text-sky-50 shadow-sm hover:shadow-md flex items-center px-1.5 text-[11px] font-medium overflow-hidden whitespace-nowrap cursor-pointer transition-shadow"
                       title={tooltip}
                       onClick={onReservationClick ? () => onReservationClick(r.id) : undefined}
                     >
