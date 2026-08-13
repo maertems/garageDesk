@@ -23,7 +23,7 @@ type LoanReservation = {
 };
 
 const DAYS_COUNT = 30;
-const LABEL_COL = "200px";
+const LABEL_COL = "320px";
 
 function startOfDay(d: Date) {
   const c = new Date(d);
@@ -58,7 +58,7 @@ export default function LoanFleetCalendar({
   return (
     <div>
       <div className="rounded-xl border bg-card shadow-card overflow-x-auto">
-        <div className="grid min-w-[900px]" style={{ gridTemplateColumns }}>
+        <div className="grid min-w-[1000px]" style={{ gridTemplateColumns }}>
           {/* En-tête */}
           <div
             className="sticky left-0 bg-card z-20 text-left text-xs font-medium text-muted-foreground px-3 py-2 border-b"
@@ -68,14 +68,21 @@ export default function LoanFleetCalendar({
           </div>
           {days.map((d, i) => {
             const isFirstOfMonth = d.getDate() === 1;
-            const monthTint = d.getMonth() % 2 === 0 ? "bg-secondary/30" : "";
+            const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+            // Teintes réservées à la bande des numéros de jours : week-end plus foncé
+            // que la teinte de mois, elle-même plus foncée qu'un jour ordinaire.
+            const dayTint = isWeekend
+              ? "bg-muted-foreground/30"
+              : d.getMonth() % 2 === 0
+                ? "bg-muted-foreground/15"
+                : "";
             return (
               <div
                 key={d.toISOString()}
                 style={{ gridColumn: i + 2, gridRow: 1 }}
                 className={cn(
                   "px-0.5 py-1.5 border-b border-r border-border/30 text-center text-[10px] text-muted-foreground",
-                  monthTint
+                  dayTint
                 )}
                 title={d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
               >
