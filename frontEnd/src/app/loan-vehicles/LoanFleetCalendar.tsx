@@ -2,6 +2,7 @@
 
 import { Fragment, useMemo } from "react";
 import { cn } from "@/lib/utils";
+import VehicleLabel, { VEHICLE_COL } from "./VehicleLabel";
 
 type LoanVehicle = {
   id: number;
@@ -23,7 +24,6 @@ type LoanReservation = {
 };
 
 const DAYS_COUNT = 30;
-const LABEL_COL = "320px";
 
 function startOfDay(d: Date) {
   const c = new Date(d);
@@ -53,12 +53,12 @@ export default function LoanFleetCalendar({
 
   const windowStart = days[0];
   const windowEnd = days[days.length - 1];
-  const gridTemplateColumns = `${LABEL_COL} repeat(${DAYS_COUNT}, minmax(22px, 1fr))`;
+  const gridTemplateColumns = `${VEHICLE_COL} repeat(${DAYS_COUNT}, minmax(22px, 1fr))`;
 
   return (
     <div>
       <div className="rounded-xl border bg-card shadow-card overflow-x-auto">
-        <div className="grid min-w-[1000px]" style={{ gridTemplateColumns }}>
+        <div className="grid min-w-[900px]" style={{ gridTemplateColumns }}>
           {/* En-tête */}
           <div
             className="sticky left-0 bg-card z-20 text-left text-xs font-medium text-muted-foreground px-3 py-2 border-b"
@@ -111,13 +111,12 @@ export default function LoanFleetCalendar({
                   key={`label-${v.id}`}
                   style={{ gridColumn: 1, gridRow: row }}
                   className={cn(
-                    "sticky left-0 z-20 px-3 py-2 border-b truncate text-xs font-medium",
+                    "sticky left-0 z-20 px-3 py-2 border-b overflow-hidden text-xs",
                     rowBg || "bg-card"
                   )}
-                  title={`${vehicleLabel} — ${v.licensePlate}`}
+                  title={`${vehicleLabel} ${v.licensePlate}`}
                 >
-                  {vehicleLabel}
-                  <span className="text-muted-foreground font-normal"> — {v.licensePlate}</span>
+                  <VehicleLabel label={vehicleLabel} plate={v.licensePlate} />
                 </div>
                 {days.map((d, i) => (
                   <div

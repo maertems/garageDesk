@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader, PageBody } from "@/components/layout/PageHeader";
 import LoanReservationForm from "./LoanReservationForm";
 import LoanFleetCalendar from "./LoanFleetCalendar";
+import VehicleLabel, { VEHICLE_COL, VEHICLE_COL_INNER } from "./VehicleLabel";
 
 type LoanVehicle = {
   id: number;
@@ -43,12 +44,14 @@ type LoanReservation = {
   interventionVehicleModel?: string | null;
 };
 
-function formatLoanVehicleDisplay(r: LoanReservation): string {
-  const model = [r.loanVehicleBrand, r.loanVehicleModel].filter(Boolean).join(" ") || "";
+// Marque/modèle et immatriculation séparés, la case « Véhicule » les affichant
+// aux deux extrémités. Sans marque/modèle, l'immatriculation (ou à défaut le
+// numéro unique) devient le libellé principal.
+function loanVehicleParts(r: LoanReservation): { label: string; plate?: string } {
+  const model = [r.loanVehicleBrand, r.loanVehicleModel].filter(Boolean).join(" ");
   const plate = r.loanVehicleLicensePlate ?? "";
-  return model && plate
-    ? `${model} — ${plate}`
-    : (plate || model || r.loanVehicleUniqueNumber) ?? String(r.loanVehicleId);
+  if (model) return { label: model, plate: plate || undefined };
+  return { label: plate || r.loanVehicleUniqueNumber || String(r.loanVehicleId) };
 }
 
 export default function LoanVehiclesSection({
@@ -149,10 +152,12 @@ export default function LoanVehiclesSection({
             />
           ) : (
             <div className="rounded-xl border bg-card shadow-card overflow-hidden">
-              <Table>
+              <Table className="text-xs">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Véhicule</TableHead>
+                    <TableHead className="px-3" style={{ width: VEHICLE_COL }}>
+                      Véhicule
+                    </TableHead>
                     <TableHead>Client</TableHead>
                     <TableHead>Début</TableHead>
                     <TableHead>Fin</TableHead>
@@ -169,7 +174,9 @@ export default function LoanVehiclesSection({
                         setReservationFormOpen(true);
                       }}
                     >
-                      <TableCell className="font-medium">{formatLoanVehicleDisplay(r)}</TableCell>
+                      <TableCell className="px-3">
+                        <VehicleLabel {...loanVehicleParts(r)} width={VEHICLE_COL_INNER} />
+                      </TableCell>
                       <TableCell>
                         {r.clientFirstName} {r.clientLastName}
                       </TableCell>
@@ -179,7 +186,7 @@ export default function LoanVehiclesSection({
                       <TableCell className="text-muted-foreground tabular-nums">
                         {r.endDate
                           ? new Date(r.endDate).toLocaleDateString("fr-FR")
-                          : <span className="text-amber-600 text-xs font-medium">en cours</span>}
+                          : <span className="text-amber-600 font-medium">en cours</span>}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
