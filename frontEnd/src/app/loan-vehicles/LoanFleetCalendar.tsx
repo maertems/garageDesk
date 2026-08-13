@@ -23,7 +23,7 @@ type LoanReservation = {
 };
 
 const DAYS_COUNT = 30;
-const LABEL_COL = "180px";
+const LABEL_COL = "200px";
 
 function startOfDay(d: Date) {
   const c = new Date(d);
@@ -67,23 +67,21 @@ export default function LoanFleetCalendar({
             Véhicule
           </div>
           {days.map((d, i) => {
-            const isToday = i === 0;
-            const isWeekend = d.getDay() === 0 || d.getDay() === 6;
             const isFirstOfMonth = d.getDate() === 1;
+            const monthTint = d.getMonth() % 2 === 0 ? "bg-secondary/30" : "";
             return (
               <div
                 key={d.toISOString()}
                 style={{ gridColumn: i + 2, gridRow: 1 }}
                 className={cn(
                   "px-0.5 py-1.5 border-b border-r border-border/30 text-center text-[10px] text-muted-foreground",
-                  isWeekend && "bg-secondary/40",
-                  isToday && "bg-primary/10 text-primary font-semibold"
+                  monthTint
                 )}
                 title={d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
               >
                 <div className="leading-none">{d.getDate()}</div>
                 <div className="text-[9px] opacity-70 leading-none mt-0.5">
-                  {isFirstOfMonth ? d.toLocaleDateString("fr-FR", { month: "short" }) : " "}
+                  {isFirstOfMonth ? d.toLocaleDateString("fr-FR", { month: "short" }) : " "}
                 </div>
               </div>
             );
@@ -106,28 +104,21 @@ export default function LoanFleetCalendar({
                   key={`label-${v.id}`}
                   style={{ gridColumn: 1, gridRow: row }}
                   className={cn(
-                    "sticky left-0 z-20 px-3 py-2 border-b whitespace-nowrap text-xs font-medium",
+                    "sticky left-0 z-20 px-3 py-2 border-b truncate text-xs font-medium",
                     rowBg || "bg-card"
                   )}
+                  title={`${vehicleLabel} — ${v.licensePlate}`}
                 >
                   {vehicleLabel}
                   <span className="text-muted-foreground font-normal"> — {v.licensePlate}</span>
                 </div>
-                {days.map((d, i) => {
-                  const isToday = i === 0;
-                  const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                  return (
-                    <div
-                      key={`cell-${v.id}-${i}`}
-                      style={{ gridColumn: i + 2, gridRow: row }}
-                      className={cn(
-                        "border-b border-r border-border/30 h-9",
-                        isToday && "ring-1 ring-inset ring-primary/40",
-                        isWeekend ? "bg-secondary/20" : rowBg
-                      )}
-                    />
-                  );
-                })}
+                {days.map((d, i) => (
+                  <div
+                    key={`cell-${v.id}-${i}`}
+                    style={{ gridColumn: i + 2, gridRow: row }}
+                    className={cn("border-b border-r border-border/30 h-[34px]", rowBg)}
+                  />
+                ))}
                 {vehicleReservations.map((r) => {
                   const start = startOfDay(new Date(r.startDate));
                   const end = r.endDate ? startOfDay(new Date(r.endDate)) : windowEnd;
@@ -156,7 +147,7 @@ export default function LoanFleetCalendar({
                     <div
                       key={`res-${r.id}`}
                       style={{ gridColumn: `${startIdx + 2} / ${endIdx + 3}`, gridRow: row }}
-                      className="relative z-10 m-1 rounded-md bg-amber-500/90 dark:bg-amber-600/90 text-white shadow-sm hover:shadow-md flex items-center px-1.5 text-[11px] font-medium overflow-hidden whitespace-nowrap cursor-pointer transition-shadow"
+                      className="relative z-10 m-1 rounded-md bg-sky-200/90 dark:bg-sky-700/60 text-sky-900 dark:text-sky-50 shadow-sm hover:shadow-md flex items-center px-1.5 text-[11px] font-medium overflow-hidden whitespace-nowrap cursor-pointer transition-shadow"
                       title={tooltip}
                       onClick={onReservationClick ? () => onReservationClick(r.id) : undefined}
                     >
@@ -171,12 +162,8 @@ export default function LoanFleetCalendar({
       </div>
       <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-sm bg-amber-500/90 dark:bg-amber-600/90" />
+          <span className="inline-block h-3 w-3 rounded-sm bg-sky-200/90 dark:bg-sky-700/60" />
           Réservé
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-sm ring-1 ring-inset ring-primary/40" />
-          Aujourd&apos;hui
         </span>
       </div>
     </div>
