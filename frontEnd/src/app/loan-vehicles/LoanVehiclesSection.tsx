@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Plus, Trash2, KeyRound, CalendarRange, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Trash2, KeyRound, CalendarRange, ChevronLeft, ChevronRight, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -251,6 +251,24 @@ export default function LoanVehiclesSection({
                         })()}
                       </TableCell>
                       <TableCell className="text-right">
+                        {/* stopPropagation : la ligne entière ouvre le modal de
+                            modification, un clic sur le contrat ne doit pas le faire. */}
+                        <Button
+                          asChild
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-primary"
+                        >
+                          <a
+                            href={`/api/proxy/loanReservations/${r.id}/contract-pdf`}
+                            download={`contrat-pret-${r.loanVehicleUniqueNumber ?? r.id}.pdf`}
+                            onClick={(e) => e.stopPropagation()}
+                            aria-label="Contrat de prêt (PDF)"
+                            title="Contrat de prêt (PDF)"
+                          >
+                            <FileText className="h-4 w-4" />
+                          </a>
+                        </Button>
                         <Button
                           type="button"
                           variant="ghost"

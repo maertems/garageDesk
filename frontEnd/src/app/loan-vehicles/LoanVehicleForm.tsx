@@ -7,6 +7,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import VehicleDamageEditor from "./VehicleDamageEditor";
 
 type LoanVehicleRecord = {
   id?: number;
@@ -115,6 +116,23 @@ export default function LoanVehicleForm({ initial }: { initial?: LoanVehicleReco
               placeholder="45000"
             />
           </div>
+        </div>
+      </section>
+
+      <section className={SECTION_CARD}>
+        <header className={SECTION_HEADER}>
+          <h3 className={SECTION_TITLE}>État de la carrosserie</h3>
+        </header>
+        <div className="p-4">
+          {id ? (
+            <VehicleDamageEditor vehicleId={id} />
+          ) : (
+            // Un dégât se rattache à un véhicule par sa clé étrangère : il n'y a
+            // rien à quoi le rattacher avant la création.
+            <p className="text-sm text-muted-foreground">
+              Le relevé des dégâts sera disponible après la création du véhicule.
+            </p>
+          )}
         </div>
       </section>
 

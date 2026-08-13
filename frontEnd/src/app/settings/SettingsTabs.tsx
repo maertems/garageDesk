@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 const tabs: { href: string; label: string; exact?: boolean }[] = [
   { href: "/settings", label: "Calendrier", exact: true },
   { href: "/settings/facturation", label: "Facturation" },
+  { href: "/settings/vehicules-pret", label: "Véhicules de prêt" },
   { href: "/settings/entreprise", label: "Entreprise" },
 ];
 
