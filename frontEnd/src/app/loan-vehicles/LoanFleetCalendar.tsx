@@ -10,6 +10,7 @@ type LoanVehicle = {
   model?: string;
   licensePlate: string;
   uniqueNumber: string;
+  active?: boolean;
 };
 type LoanReservation = {
   id: number;
@@ -98,7 +99,15 @@ export default function LoanFleetCalendar({
           {vehicles.map((v, rowIdx) => {
             const row = rowIdx + 2;
             const vehicleLabel = [v.brand, v.model].filter(Boolean).join(" ") || v.uniqueNumber;
-            const rowBg = rowIdx % 2 === 1 ? "bg-primary/10" : "";
+            // Véhicule inactif : ligne grisée. Ses réservations restent affichées,
+            // la désactivation retirant le véhicule de l'offre sans effacer
+            // l'historique ni un prêt en cours.
+            const inactive = v.active === false;
+            const rowBg = inactive
+              ? "bg-muted-foreground/10"
+              : rowIdx % 2 === 1
+                ? "bg-primary/10"
+                : "";
             const vehicleReservations = reservations.filter(
               (r) =>
                 r.loanVehicleId === v.id &&
@@ -112,9 +121,10 @@ export default function LoanFleetCalendar({
                   style={{ gridColumn: 1, gridRow: row }}
                   className={cn(
                     "sticky left-0 z-20 px-3 py-2 border-b overflow-hidden text-xs",
-                    rowBg || "bg-card"
+                    rowBg || "bg-card",
+                    inactive && "opacity-50"
                   )}
-                  title={`${vehicleLabel} ${v.licensePlate}`}
+                  title={`${vehicleLabel} ${v.licensePlate}${inactive ? " (inactif)" : ""}`}
                 >
                   <VehicleLabel label={vehicleLabel} plate={v.licensePlate} />
                 </div>
@@ -171,6 +181,12 @@ export default function LoanFleetCalendar({
           <span className="inline-block h-3 w-3 rounded-sm bg-sky-200/90 dark:bg-sky-700/60" />
           Réservé
         </span>
+        {vehicles.some((v) => v.active === false) && (
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded-sm bg-muted-foreground/10 border border-border" />
+            Inactif — non proposé aux clients
+          </span>
+        )}
       </div>
     </div>
   );

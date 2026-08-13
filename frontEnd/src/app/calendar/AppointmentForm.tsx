@@ -41,6 +41,7 @@ type LoanVehicle = {
   licensePlate: string;
   brand?: string;
   model?: string;
+  active?: boolean;
 };
 
 const APPOINTMENT_TYPES = ["client", "note"] as const;
@@ -420,6 +421,14 @@ export default function AppointmentForm({
     );
   }, [loanReservations, editingId]);
 
+  // Les véhicules de prêt inactifs ne sont plus proposés, sauf celui déjà
+  // affecté au rendez-vous en cours de modification : le retirer viderait le
+  // select et ferait perdre le prêt existant à l'enregistrement.
+  const selectableLoanVehicles = useMemo(
+    () => loanVehicles.filter((lv) => lv.active !== false || lv.id === loanVehicleId),
+    [loanVehicles, loanVehicleId]
+  );
+
   return (
     <>
       <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -707,13 +716,14 @@ export default function AppointmentForm({
                     className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <option value="">Pas de prêt</option>
-                    {loanVehicles.map((lv) => {
+                    {selectableLoanVehicles.map((lv) => {
                       const occupied = occupiedLoanVehicleIds.has(lv.id);
                       return (
                         <option key={lv.id} value={lv.id} disabled={occupied}>
                           {lv.uniqueNumber} — {lv.licensePlate}{" "}
                           {[lv.brand, lv.model].filter(Boolean).join(" ") || ""}
                           {occupied ? " (déjà prêté)" : ""}
+                          {lv.active === false ? " (inactif)" : ""}
                         </option>
                       );
                     })}

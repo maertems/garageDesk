@@ -27,6 +27,7 @@ type LoanVehicle = {
   licensePlate: string;
   uniqueNumber: string;
   mileage?: number;
+  active?: boolean;
 };
 type LoanReservation = {
   id: number;
@@ -139,6 +140,23 @@ export default function LoanVehiclesSection({
     const res = await fetch(`/api/proxy/loanVehicles/${id}`, { method: "DELETE" });
     if (res.ok) setVehicles((prev) => prev.filter((v) => v.id !== id));
   }
+  // Désactiver retire le véhicule de l'offre (listes de choix des réservations,
+  // grisé dans le calendrier) sans toucher à ses réservations existantes.
+  async function toggleVehicleActive(v: LoanVehicle) {
+    const next = v.active === false;
+    const res = await fetch(`/api/proxy/loanVehicles/${v.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ active: next }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setVehicles((prev) =>
+        prev.map((x) => (x.id === v.id ? { ...x, active: updated.active } : x))
+      );
+    }
+  }
+
   async function deleteReservation(id: number) {
     if (!confirm("Supprimer cette réservation ?")) return;
     const res = await fetch(`/api/proxy/loanReservations/${id}`, { method: "DELETE" });
@@ -325,8 +343,9 @@ export default function LoanVehiclesSection({
                     <TableHeader>
                       <TableRow>
                         <TableHead>N°</TableHead>
-                        <TableHead>Plaque</TableHead>
                         <TableHead>Marque / Modèle</TableHead>
+                        <TableHead>Plaque</TableHead>
+                        <TableHead>Actif</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -341,11 +360,27 @@ export default function LoanVehiclesSection({
                               {v.uniqueNumber}
                             </Link>
                           </TableCell>
-                          <TableCell className="font-mono">{v.licensePlate}</TableCell>
-                          <TableCell className="text-muted-foreground">
+                          <TableCell className="font-medium">
                             {[v.brand, v.model].filter(Boolean).join(" ") || (
                               <span className="opacity-50">—</span>
                             )}
+                          </TableCell>
+                          <TableCell className="font-mono text-muted-foreground">
+                            {v.licensePlate}
+                          </TableCell>
+                          <TableCell>
+                            <input
+                              type="checkbox"
+                              checked={v.active !== false}
+                              onChange={() => toggleVehicleActive(v)}
+                              title={
+                                v.active !== false
+                                  ? "Désactiver — le véhicule ne sera plus proposé aux clients"
+                                  : "Activer — le véhicule redevient disponible"
+                              }
+                              aria-label={v.active !== false ? "Désactiver" : "Activer"}
+                              className="h-4 w-4 accent-primary"
+                            />
                           </TableCell>
                           <TableCell className="text-right">
                             <Button

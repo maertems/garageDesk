@@ -21,6 +21,7 @@ type LoanVehicle = {
   licensePlate: string;
   brand?: string;
   model?: string;
+  active?: boolean;
 };
 type Reservation = {
   id: number;
@@ -314,6 +315,13 @@ export default function LoanReservationForm({
     );
   }, [activeReservations, editingId]);
 
+  // Les véhicules inactifs ne sont plus proposés, sauf celui déjà affecté à la
+  // réservation en cours de modification : le retirer viderait le select.
+  const selectableVehicles = useMemo(
+    () => vehicles.filter((v) => v.active !== false || v.id === loanVehicleId),
+    [vehicles, loanVehicleId]
+  );
+
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-xl">
@@ -369,13 +377,14 @@ export default function LoanReservationForm({
                       className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <option value="">— Choisir un véhicule —</option>
-                      {vehicles.map((v) => {
+                      {selectableVehicles.map((v) => {
                         const occupied = occupiedVehicleIds.has(v.id);
                         return (
                           <option key={v.id} value={v.id} disabled={occupied}>
                             {v.uniqueNumber} — {v.licensePlate}{" "}
                             {[v.brand, v.model].filter(Boolean).join(" ") || ""}
                             {occupied ? " (déjà prêté)" : ""}
+                            {v.active === false ? " (inactif)" : ""}
                           </option>
                         );
                       })}

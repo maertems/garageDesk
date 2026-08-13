@@ -8,6 +8,8 @@ class LoanVehicleBase(CamelModel):
     licensePlate: str
     mileage: Optional[int] = None
     uniqueNumber: str
+    # Un véhicule inactif reste en flotte mais n'est plus proposé aux clients.
+    active: bool = True
 
 
 class LoanVehicleCreate(LoanVehicleBase):
@@ -20,6 +22,7 @@ class LoanVehicleUpdate(CamelModel):
     licensePlate: Optional[str] = None
     mileage: Optional[int] = None
     uniqueNumber: Optional[str] = None
+    active: Optional[bool] = None
 
 
 class LoanVehicleResponse(LoanVehicleBase):

@@ -10,7 +10,7 @@ router = APIRouter(prefix="/loanVehicles", tags=["loanVehicles"])
 def list_loan_vehicles(current_user: dict = Depends(get_current_user)):
     with db_cursor() as cur:
         cur.execute(
-            "SELECT id, brand, model, licensePlate, mileage, uniqueNumber FROM loanVehicles ORDER BY uniqueNumber"
+            "SELECT id, brand, model, licensePlate, mileage, uniqueNumber, active FROM loanVehicles ORDER BY uniqueNumber"
         )
         rows = cur.fetchall()
     return [LoanVehicleResponse(**r) for r in rows]
@@ -20,7 +20,7 @@ def list_loan_vehicles(current_user: dict = Depends(get_current_user)):
 def get_loan_vehicle(vehicle_id: int, current_user: dict = Depends(get_current_user)):
     with db_cursor() as cur:
         cur.execute(
-            "SELECT id, brand, model, licensePlate, mileage, uniqueNumber FROM loanVehicles WHERE id = %s",
+            "SELECT id, brand, model, licensePlate, mileage, uniqueNumber, active FROM loanVehicles WHERE id = %s",
             (vehicle_id,),
         )
         row = cur.fetchone()
@@ -34,16 +34,16 @@ def create_loan_vehicle(data: LoanVehicleCreate, current_user: dict = Depends(ge
     with db_cursor(commit=True) as cur:
         cur.execute(
             """
-            INSERT INTO loanVehicles (brand, model, licensePlate, mileage, uniqueNumber)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO loanVehicles (brand, model, licensePlate, mileage, uniqueNumber, active)
+            VALUES (%s, %s, %s, %s, %s, %s)
             """,
-            (data.brand, data.model, data.licensePlate, data.mileage, data.uniqueNumber),
+            (data.brand, data.model, data.licensePlate, data.mileage, data.uniqueNumber, data.active),
         )
         cur.execute("SELECT LAST_INSERT_ID() AS id")
         vid = cur.fetchone()["id"]
     with db_cursor() as cur:
         cur.execute(
-            "SELECT id, brand, model, licensePlate, mileage, uniqueNumber FROM loanVehicles WHERE id = %s",
+            "SELECT id, brand, model, licensePlate, mileage, uniqueNumber, active FROM loanVehicles WHERE id = %s",
             (vid,),
         )
         row = cur.fetchone()
@@ -65,7 +65,7 @@ def update_loan_vehicle(
             raise HTTPException(status_code=404, detail={"code": "notFound", "message": "Loan vehicle not found"})
     with db_cursor() as cur:
         cur.execute(
-            "SELECT id, brand, model, licensePlate, mileage, uniqueNumber FROM loanVehicles WHERE id = %s",
+            "SELECT id, brand, model, licensePlate, mileage, uniqueNumber, active FROM loanVehicles WHERE id = %s",
             (vehicle_id,),
         )
         row = cur.fetchone()
