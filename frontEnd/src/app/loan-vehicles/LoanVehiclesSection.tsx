@@ -261,7 +261,7 @@ export default function LoanVehiclesSection({
                         >
                           <a
                             href={`/api/proxy/loanReservations/${r.id}/contract-pdf`}
-                            download={`contrat-pret-${r.loanVehicleUniqueNumber ?? r.id}.pdf`}
+                            download={`contrat-pret-${r.loanVehicleLicensePlate ?? r.id}.pdf`}
                             onClick={(e) => e.stopPropagation()}
                             aria-label="Contrat de prêt (PDF)"
                             title="Contrat de prêt (PDF)"

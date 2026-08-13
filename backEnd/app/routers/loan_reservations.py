@@ -206,7 +206,9 @@ def download_loan_contract_pdf(reservation_id: int, current_user: dict = Depends
         terms=(terms_row or {}).get("value"),
     )
 
-    slug = re.sub(r"[^A-Za-z0-9_-]+", "-", str(vehicle.get("uniqueNumber") or "")).strip("-")
+    # Plaque et non numéro de parc : ce dernier a été retiré du document, le nom du
+    # fichier suit.
+    slug = re.sub(r"[^A-Za-z0-9_-]+", "-", str(vehicle.get("licensePlate") or "")).strip("-")
     filename = f"contrat-pret-{slug or 'vehicule'}-{reservation_id}.pdf"
     return Response(
         content=pdf_bytes,
