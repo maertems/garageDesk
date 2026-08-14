@@ -17,11 +17,25 @@ BACKEND_PORT="${BACKEND_PORT:-7780}"
 APP_NAME="${APP_NAME:-GarageDesk}"
 
 cd "$SCRIPT_DIR/backEnd"
-sudo docker stop gd-backend
-sudo docker rm gd-backend
-sudo docker rmi gd-api
 
-sudo docker build -t gd-api .
+# Identifiant de l'image en service, relevé avant reconstruction : c'est lui
+# qu'on retirera à la fin. Un `docker image prune` généraliste supprimerait
+# aussi les images sans tag des autres projets de la machine.
+OLD_IMAGE="$(sudo docker images -q gd-api 2>/dev/null | head -1)"
+
+# Construction AVANT de toucher au conteneur en service : un build qui échoue
+# laisse l'ancienne version en ligne. L'ordre inverse (stop / rm / rmi puis
+# build) laissait l'API arrêtée ET l'image supprimée en cas d'échec.
+if ! sudo docker build -t gd-api .; then
+  echo "updateBack : build échoué — le conteneur en service n'a pas été touché." >&2
+  exit 1
+fi
+
+# Le conteneur tourne encore sur l'ancienne image, qui vient de perdre son tag
+# au profit de la nouvelle : on l'arrête et on le retire maintenant seulement.
+sudo docker stop gd-backend 2>/dev/null
+sudo docker rm gd-backend 2>/dev/null
+
 sudo docker run -d -p "${BACKEND_PORT}:80" \
   -e MYSQL_HOST="$MYSQL_HOST" \
   -e MYSQL_USER="$MYSQL_USER" \
@@ -31,6 +45,14 @@ sudo docker run -d -p "${BACKEND_PORT}:80" \
   --name gd-backend \
   gd-api
 
-
+# L'ancienne image a perdu son tag au profit de la nouvelle et n'a plus de
+# conteneur : sans ce retrait, un exemplaire s'accumulerait à chaque
+# déploiement. Après le `docker rm` ci-dessus, sinon elle compte comme utilisée.
+# Le test d'égalité couvre le cas où le build n'a rien changé (cache) : l'image
+# est alors la même, il ne faut surtout pas la supprimer.
+NEW_IMAGE="$(sudo docker images -q gd-api 2>/dev/null | head -1)"
+if [ -n "$OLD_IMAGE" ] && [ "$OLD_IMAGE" != "$NEW_IMAGE" ]; then
+  sudo docker rmi "$OLD_IMAGE" 2>/dev/null
+fi
 
 cd ..
