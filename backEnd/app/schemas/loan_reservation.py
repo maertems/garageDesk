@@ -60,3 +60,5 @@ class LoanReservationWithJoinsResponse(LoanReservationResponse):
     appointmentId: Optional[int] = None
     interventionVehicleBrand: Optional[str] = None
     interventionVehicleModel: Optional[str] = None
+    # Finition du véhicule du client, affichée dans l'infobulle du calendrier.
+    interventionVehicleType: Optional[str] = None

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { format, addMinutes, parseISO, differenceInMinutes } from "date-fns";
-import { Plus, Trash2, Loader2 } from "lucide-react";
+import { Plus, Trash2, Loader2, FileText } from "lucide-react";
 import { getLabel, appointmentCategoryLabels, appointmentStatusLabels } from "@/lib/labels";
 import {
   Dialog,
@@ -110,7 +110,7 @@ export default function AppointmentForm({
   const [appointmentType, setAppointmentType] = useState<"client" | "note">("client");
   const [clientSubType, setClientSubType] = useState<ClientSubType>("reception");
   const [loanVehicles, setLoanVehicles] = useState<LoanVehicle[]>([]);
-  const [loanReservations, setLoanReservations] = useState<{ loanVehicleId: number; endDate: string | null; appointmentId: number | null }[]>([]);
+  const [loanReservations, setLoanReservations] = useState<{ id: number; loanVehicleId: number; endDate: string | null; appointmentId: number | null }[]>([]);
   const [loanVehicleId, setLoanVehicleId] = useState<number | "">("");
   const [loanStartDate, setLoanStartDate] = useState("");
   const [loanEndDate, setLoanEndDate] = useState("");
@@ -209,6 +209,14 @@ export default function AppointmentForm({
       })
       .catch(() => {});
   }, []);
+
+  // Réservation de prêt liée au RDV en cours de modification : le contrat s'obtient
+  // par l'identifiant de la RÉSERVATION, pas du rendez-vous. Absente sur un
+  // nouveau RDV, la réservation n'existant qu'après enregistrement.
+  const linkedReservationId = useMemo(() => {
+    if (!editingId) return null;
+    return loanReservations.find((r) => r.appointmentId === editingId)?.id ?? null;
+  }, [loanReservations, editingId]);
 
   const filteredClients = useMemo(() => {
     const term = clientSearch.trim().toLowerCase();
@@ -772,6 +780,23 @@ export default function AppointmentForm({
                         </div>
                       </div>
                     </div>
+                  )}
+                  {linkedReservationId && (
+                    <a
+                      href={`/api/proxy/loanReservations/${linkedReservationId}/contract-pdf`}
+                      download={`contrat-pret-${linkedReservationId}.pdf`}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      Contrat de prêt (PDF)
+                    </a>
+                  )}
+                  {!linkedReservationId && loanVehicleId !== "" && (
+                    // La réservation n'existe qu'après enregistrement : proposer le
+                    // contrat avant serait un lien mort.
+                    <p className="text-xs text-muted-foreground">
+                      Le contrat de prêt sera disponible après enregistrement.
+                    </p>
                   )}
                 </div>
               </section>

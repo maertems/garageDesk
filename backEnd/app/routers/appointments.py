@@ -28,7 +28,7 @@ def list_appointments(
                        a.loanStartDate, a.loanEndDate, a.prestation, a.appointmentType, a.appointmentSubType,
                        a.comment, a.smsReminder, a.startTime, a.endTime,
                        c.firstName AS clientFirstName, c.lastName AS clientLastName,
-                       v.licensePlate AS vehicleLicensePlate, v.brand AS vehicleBrand, v.model AS vehicleModel,
+                       v.licensePlate AS vehicleLicensePlate, v.brand AS vehicleBrand, v.model AS vehicleModel, v.type AS vehicleType,
                        lv.uniqueNumber AS loanVehicleUniqueNumber, lv.brand AS loanVehicleBrand, lv.model AS loanVehicleModel,
                        ac.code AS categoryCode, ac.color AS categoryColor,
                        ast.code AS statusCode, ast.color AS statusColor
@@ -50,7 +50,7 @@ def list_appointments(
                        a.loanStartDate, a.loanEndDate, a.prestation, a.appointmentType, a.appointmentSubType,
                        a.comment, a.smsReminder, a.startTime, a.endTime,
                        c.firstName AS clientFirstName, c.lastName AS clientLastName,
-                       v.licensePlate AS vehicleLicensePlate, v.brand AS vehicleBrand, v.model AS vehicleModel,
+                       v.licensePlate AS vehicleLicensePlate, v.brand AS vehicleBrand, v.model AS vehicleModel, v.type AS vehicleType,
                        lv.uniqueNumber AS loanVehicleUniqueNumber, lv.brand AS loanVehicleBrand, lv.model AS loanVehicleModel,
                        ac.code AS categoryCode, ac.color AS categoryColor,
                        ast.code AS statusCode, ast.color AS statusColor
@@ -77,7 +77,7 @@ def get_appointment(appointment_id: int, current_user: dict = Depends(get_curren
                    a.loanStartDate, a.loanEndDate, a.prestation, a.appointmentType, a.appointmentSubType,
                    a.comment, a.smsReminder, a.startTime, a.endTime,
                    c.firstName AS clientFirstName, c.lastName AS clientLastName,
-                   v.licensePlate AS vehicleLicensePlate, v.brand AS vehicleBrand, v.model AS vehicleModel,
+                   v.licensePlate AS vehicleLicensePlate, v.brand AS vehicleBrand, v.model AS vehicleModel, v.type AS vehicleType,
                    lv.uniqueNumber AS loanVehicleUniqueNumber, lv.brand AS loanVehicleBrand, lv.model AS loanVehicleModel,
                    ac.code AS categoryCode, ac.color AS categoryColor,
                    ast.code AS statusCode, ast.color AS statusColor

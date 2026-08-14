@@ -30,6 +30,12 @@ import { cn } from "@/lib/utils";
 import AppointmentForm from "./AppointmentForm";
 import LoanReservationForm from "@/app/loan-vehicles/LoanReservationForm";
 import {
+  AppointmentTooltipBody,
+  LoanTooltipBody,
+  TOOLTIP_CLASS,
+  formatLoanVehicleDisplay,
+} from "./CalendarTooltips";
+import {
   DndContext,
   DragEndEvent,
   DragOverlay,
@@ -58,6 +64,7 @@ type Appointment = {
   vehicleLicensePlate?: string;
   vehicleBrand?: string | null;
   vehicleModel?: string | null;
+  vehicleType?: string | null;
   categoryCode?: string;
   statusCode?: string;
   categoryColor?: string;
@@ -88,15 +95,10 @@ type LoanReservation = {
   loanVehicleModel?: string;
   clientFirstName?: string;
   clientLastName?: string;
+  interventionVehicleBrand?: string | null;
+  interventionVehicleModel?: string | null;
+  interventionVehicleType?: string | null;
 };
-
-function formatLoanVehicleDisplay(r: LoanReservation): string {
-  const model = [r.loanVehicleBrand, r.loanVehicleModel].filter(Boolean).join(" ") || "";
-  const plate = r.loanVehicleLicensePlate ?? "";
-  return model && plate
-    ? `${model} — ${plate}`
-    : (plate || model || r.loanVehicleUniqueNumber) ?? String(r.loanVehicleId);
-}
 
 type CalendarViewProps = {
   initialView: string;
@@ -307,6 +309,12 @@ export default function CalendarView({
   const [view, setView] = useState(initialView);
   const [baseDate, setBaseDate] = useState(new Date());
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  // Les prêts arrivaient uniquement par la prop rendue côté serveur : après
+  // l'enregistrement d'un RDV, seuls les RDV étaient rechargés et la pastille de
+  // prêt n'apparaissait qu'après un rechargement complet de la page. On en tient
+  // donc une copie locale, rafraîchie en même temps que les RDV. La prop sert
+  // d'état initial, ce qui évite un affichage vide au premier rendu.
+  const [loans, setLoans] = useState<LoanReservation[]>(loanReservations);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [slotStart, setSlotStart] = useState<Date | null>(null);
@@ -357,7 +365,7 @@ export default function CalendarView({
     const end = parseISO(lr.endDate);
     return start <= periodEnd && end >= periodStart;
   });
-  const visibleLoans = loanReservations.filter((lr) => {
+  const visibleLoans = loans.filter((lr) => {
     const start = parseISO(lr.startDate);
     const end = lr.endDate ? parseISO(lr.endDate) : new Date(8640000000000000);
     return start <= periodEnd && end >= periodStart;
@@ -378,9 +386,23 @@ export default function CalendarView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, baseDate.getTime(), days[0]?.getTime(), days[days.length - 1]?.getTime()]);
 
+  const fetchLoans = useCallback(async () => {
+    const res = await fetch("/api/proxy/loanReservations");
+    if (res.ok) {
+      const data = await res.json();
+      setLoans(Array.isArray(data) ? data : []);
+    }
+  }, []);
+
   useEffect(() => {
     fetchAppointments();
   }, [fetchAppointments]);
+
+  // Une prop rafraîchie par le serveur (router.refresh) doit reprendre la main sur
+  // la copie locale, sinon un rechargement côté serveur serait ignoré.
+  useEffect(() => {
+    setLoans(loanReservations);
+  }, [loanReservations]);
 
   const handleSlotClick = (date: Date, minutesFromStart: number) => {
     const start = new Date(date);
@@ -406,6 +428,9 @@ export default function CalendarView({
     setFormOpen(false);
     setEditingId(null);
     fetchAppointments();
+    // Un RDV peut créer, modifier ou supprimer sa réservation de prêt liée : sans
+    // ce rechargement, la pastille n'apparaissait qu'après un F5.
+    fetchLoans();
   };
 
   // ─── Drag handlers ────────────────────────────────────────────────────────
@@ -498,6 +523,21 @@ export default function CalendarView({
   const hideTooltip = () => {
     setTooltipApt(null);
     setTooltipPos(null);
+  };
+
+  // Infobulle des pastilles de prêt. Elle remplace l'attribut `title` natif, dont
+  // le navigateur impose un délai d'une à deux secondes avant l'affichage — trop
+  // lent quand on balaie une ligne de prêts. Le même état pilote la position.
+  const [tooltipLoan, setTooltipLoan] = useState<LoanReservation | null>(null);
+  const [tooltipLoanPos, setTooltipLoanPos] = useState<{ x: number; y: number } | null>(null);
+  const showLoanTooltip = (e: React.MouseEvent, r: LoanReservation) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setTooltipLoan(r);
+    setTooltipLoanPos({ x: rect.left + rect.width / 2, y: rect.bottom });
+  };
+  const hideLoanTooltip = () => {
+    setTooltipLoan(null);
+    setTooltipLoanPos(null);
   };
 
   const titleText =
@@ -668,7 +708,8 @@ export default function CalendarView({
                             color: "rgb(6, 95, 70)",
                             border: "1px solid rgba(5, 150, 105, 0.3)",
                           }}
-                          title={`${formatLoanVehicleDisplay(r)} (${format(parseISO(r.startDate), "d/M")}–${r.endDate ? format(parseISO(r.endDate), "d/M") : "en cours"}) — Cliquer pour modifier`}
+                          onMouseEnter={(e) => showLoanTooltip(e, r)}
+                          onMouseLeave={hideLoanTooltip}
                         >
                           {r.loanVehicleUniqueNumber ?? `#${r.loanVehicleId}`}
                         </button>
@@ -870,54 +911,37 @@ export default function CalendarView({
             onClose={() => setReservationFormOpen(false)}
             onSaved={() => {
               setReservationFormOpen(false);
+              fetchLoans();
               router.refresh();
             }}
           />
         )}
 
+        {tooltipLoan && tooltipLoanPos && (
+          <div
+            role="tooltip"
+            className={TOOLTIP_CLASS}
+            style={{
+              left: tooltipLoanPos.x,
+              top: tooltipLoanPos.y + 8,
+              transform: "translate(-50%, 0)",
+            }}
+          >
+            <LoanTooltipBody res={tooltipLoan} />
+          </div>
+        )}
+
         {tooltipApt && tooltipPos && (
           <div
             role="tooltip"
-            className="fixed z-[10000] px-3 py-2 bg-popover border rounded-md shadow-md text-xs leading-relaxed whitespace-nowrap pointer-events-none"
+            className={TOOLTIP_CLASS}
             style={{
               left: tooltipPos.x,
               top: tooltipPos.y - 8,
               transform: "translate(-50%, -100%)",
             }}
           >
-            <div className="font-semibold">
-              {tooltipApt.appointmentType === "note"
-                ? "Note"
-                : [tooltipApt.clientFirstName, tooltipApt.clientLastName]
-                    .filter(Boolean)
-                    .join(" ")
-                    .trim() || "—"}
-            </div>
-            {tooltipApt.appointmentType !== "note" &&
-              (tooltipApt.vehicleBrand ||
-                tooltipApt.vehicleModel ||
-                tooltipApt.vehicleLicensePlate) && (
-                <div className="text-muted-foreground">
-                  {[tooltipApt.vehicleBrand, tooltipApt.vehicleModel]
-                    .filter(Boolean)
-                    .join(" ")
-                    .trim() || tooltipApt.vehicleLicensePlate || "—"}
-                </div>
-              )}
-            {(tooltipApt.loanVehicleUniqueNumber ||
-              tooltipApt.loanVehicleBrand ||
-              tooltipApt.loanVehicleModel) && (
-              <div className="text-muted-foreground">
-                {[
-                  tooltipApt.loanVehicleUniqueNumber ?? "",
-                  [tooltipApt.loanVehicleBrand, tooltipApt.loanVehicleModel]
-                    .filter(Boolean)
-                    .join(" "),
-                ]
-                  .filter(Boolean)
-                  .join(" / ")}
-              </div>
-            )}
+            <AppointmentTooltipBody apt={tooltipApt} />
           </div>
         )}
       </div>

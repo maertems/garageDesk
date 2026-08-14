@@ -43,7 +43,8 @@ def list_loan_reservations(
                    lv.licensePlate AS loanVehicleLicensePlate,
                    lv.brand AS loanVehicleBrand, lv.model AS loanVehicleModel,
                    c.firstName AS clientFirstName, c.lastName AS clientLastName,
-                   av.brand AS interventionVehicleBrand, av.model AS interventionVehicleModel
+                   av.brand AS interventionVehicleBrand, av.model AS interventionVehicleModel,
+                   av.type AS interventionVehicleType
             FROM loanReservations lr
             JOIN loanVehicles lv ON lv.id = lr.loanVehicleId
             JOIN clients c ON c.id = lr.clientId
@@ -69,7 +70,8 @@ def get_loan_reservation(reservation_id: int, current_user: dict = Depends(get_c
                    lv.licensePlate AS loanVehicleLicensePlate,
                    lv.brand AS loanVehicleBrand, lv.model AS loanVehicleModel,
                    c.firstName AS clientFirstName, c.lastName AS clientLastName,
-                   av.brand AS interventionVehicleBrand, av.model AS interventionVehicleModel
+                   av.brand AS interventionVehicleBrand, av.model AS interventionVehicleModel,
+                   av.type AS interventionVehicleType
             FROM loanReservations lr
             JOIN loanVehicles lv ON lv.id = lr.loanVehicleId
             JOIN clients c ON c.id = lr.clientId

@@ -75,6 +75,8 @@ class AppointmentWithJoinsResponse(CamelModel):
     statusCode: Optional[str] = None
     categoryColor: Optional[str] = None
     statusColor: Optional[str] = None
+    # Finition du véhicule du client, affichée dans l'infobulle du calendrier.
+    vehicleType: Optional[str] = None
     loanVehicleUniqueNumber: Optional[str] = None
     loanVehicleBrand: Optional[str] = None
     loanVehicleModel: Optional[str] = None
