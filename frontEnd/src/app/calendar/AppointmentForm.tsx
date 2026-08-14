@@ -347,6 +347,13 @@ export default function AppointmentForm({
       setError("Veuillez renseigner la date de début du prêt.");
       return;
     }
+    // `loanReservations.clientId` est NOT NULL : sans client, la réservation ne
+    // peut pas être créée et le prêt resterait invisible dans le calendrier de
+    // flotte comme dans la liste. Mieux vaut le dire que d'échouer en silence.
+    if (hasLoan && !clientId) {
+      setError("Un prêt de véhicule doit être rattaché à un client : sélectionnez-le d'abord.");
+      return;
+    }
     setSaving(true);
 
     if (!editingId && appointmentType === "client" && clientId && selectedClient) {

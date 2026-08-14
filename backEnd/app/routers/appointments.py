@@ -133,10 +133,22 @@ def create_appointment(data: AppointmentCreate, current_user: dict = Depends(get
                 "INSERT INTO workshopPlanning (vehicleId, planDate, appointmentId) VALUES (%s, %s, %s)",
                 (data.vehicleId, plan_date, aid),
             )
-    # Si le RDV a un véhicule de prêt + dates + client, créer une réservation liée (pour affichage dans la liste)
-    if data.loanVehicleId and data.loanStartDate and data.loanEndDate and data.clientId:
+    # Si le RDV a un véhicule de prêt + une date de début + un client, créer la
+    # réservation liée (elle seule alimente le calendrier de flotte et la liste des
+    # réservations).
+    #
+    # La date de FIN n'est pas exigée : `loanReservations.endDate` est nullable et
+    # tout l'applicatif affiche « en cours » quand elle manque — c'est même ce que
+    # le formulaire annonce en ambre sous « Fin prêt ». L'exiger ici faisait
+    # enregistrer le RDV avec ses champs de prêt sans jamais créer la réservation,
+    # donc un prêt invisible partout.
+    if data.loanVehicleId and data.loanStartDate and data.clientId:
         start_dt = datetime.combine(data.loanStartDate, dt_time.min)
-        end_dt = datetime.combine(data.loanEndDate, dt_time(23, 59, 59, 999999))
+        end_dt = (
+            datetime.combine(data.loanEndDate, dt_time(23, 59, 59, 999999))
+            if data.loanEndDate
+            else None
+        )
         with db_cursor(commit=True) as cur:
             cur.execute(
                 """
@@ -219,9 +231,17 @@ def update_appointment(
             (appointment_id,),
         )
         apt = cur.fetchone()
-    if apt and apt["loanVehicleId"] and apt["loanStartDate"] and apt["loanEndDate"] and apt["clientId"]:
+    # Même règle qu'à la création : la date de fin est optionnelle. Sans ce
+    # correctif, la branche `else` ci-dessous SUPPRIMAIT la réservation dès que la
+    # date de fin était vide — y compris en effaçant celle d'un prêt en cours avec
+    # le bouton ✕ du formulaire, ou en modifiant un tout autre champ du RDV.
+    if apt and apt["loanVehicleId"] and apt["loanStartDate"] and apt["clientId"]:
         start_dt = datetime.combine(apt["loanStartDate"], dt_time.min)
-        end_dt = datetime.combine(apt["loanEndDate"], dt_time(23, 59, 59, 999999))
+        end_dt = (
+            datetime.combine(apt["loanEndDate"], dt_time(23, 59, 59, 999999))
+            if apt["loanEndDate"]
+            else None
+        )
         with db_cursor(commit=True) as cur:
             cur.execute("SELECT id FROM loanReservations WHERE appointmentId = %s", (appointment_id,))
             existing = cur.fetchone()
