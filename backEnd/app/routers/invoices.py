@@ -19,6 +19,7 @@ from app.schemas.billing_invoices import (
     InvoiceResponse,
 )
 from app.services.billing_pdf import generate_invoice_pdf
+from app.services.company_logo import fetch_logo
 from app.services.invoice_service import issue_invoice
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
@@ -176,7 +177,7 @@ def get_invoice(invoice_id: int, current_user: dict = Depends(get_current_user))
 def download_invoice_pdf(invoice_id: int, current_user: dict = Depends(get_current_user)):
     inv = _fetch_invoice_or_404(invoice_id)
     lines = _fetch_lines(invoice_id)
-    pdf_bytes = generate_invoice_pdf(inv, lines)
+    pdf_bytes = generate_invoice_pdf(inv, lines, fetch_logo())
     filename = f"{inv['invoiceNumber']}.pdf"
     return Response(
         content=pdf_bytes,

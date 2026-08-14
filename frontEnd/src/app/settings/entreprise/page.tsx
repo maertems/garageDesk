@@ -23,6 +23,7 @@ type CompanySettings = {
   mediatorUrl: string | null;
   mediatorAddress: string | null;
   vatExemption: boolean;
+  hasLogo: boolean;
   missingMandatoryFields: string[];
 };
 

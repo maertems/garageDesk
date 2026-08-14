@@ -10,6 +10,7 @@ from app.schemas.loan_reservation import (
     LoanReservationWithJoinsResponse,
 )
 from app.services.loan_contract_pdf import generate_loan_contract_pdf
+from app.services.company_logo import fetch_logo
 
 router = APIRouter(prefix="/loanReservations", tags=["loanReservations"])
 
@@ -204,6 +205,7 @@ def download_loan_contract_pdf(reservation_id: int, current_user: dict = Depends
         company=company,
         damages=damages,
         terms=(terms_row or {}).get("value"),
+        logo=fetch_logo(),
     )
 
     # Plaque et non numéro de parc : ce dernier a été retiré du document, le nom du

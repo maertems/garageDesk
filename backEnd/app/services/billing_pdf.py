@@ -4,8 +4,8 @@ Generates professional A4 PDFs using reportlab (pure Python, no system deps).
 Standard Helvetica font covers Latin-1 (all French characters included).
 
 Public API:
-  generate_invoice_pdf(inv, lines)     → bytes
-  generate_credit_note_pdf(cn, lines)  → bytes
+  generate_invoice_pdf(inv, lines, logo)     → bytes
+  generate_credit_note_pdf(cn, lines, logo)  → bytes
 """
 
 import io
@@ -15,6 +15,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
+from reportlab.lib.utils import ImageReader
 
 PAGE_W, PAGE_H = A4
 ML = 20 * mm   # margin left
@@ -90,6 +91,64 @@ def _wrap(c: canvas.Canvas, text: str, font: str, size: float, max_w: float) -> 
     return lines or [""]
 
 
+# ── Logo ──────────────────────────────────────────────────────────────────────
+# Cadre FIXE : quel que soit le fichier fourni, l'encombrement sur le document est
+# le même, donc la mise en page reste prévisible. 40 × 15 mm est dimensionné par
+# la contrainte la plus serrée — le bandeau du contrat de prêt ne fait que 21 mm
+# de haut, et sa mise en page tient tout juste sur une page.
+LOGO_BOX_W = 40 * mm
+LOGO_BOX_H = 15 * mm
+_LOGO_PAD = 1.5 * mm
+
+
+def draw_logo(c: canvas.Canvas, logo: bytes | None, right_x: float, center_y: float) -> None:
+    """Dessine le logo dans le cadre fixe, bord droit sur `right_x`.
+
+    L'image est redimensionnée pour tenir DANS le cadre en conservant ses
+    proportions — jamais déformée — puis centrée. La marge intérieure de 1,5 mm
+    laisse 37 × 12 mm utiles : un logo carré occupe donc 12 × 12 mm, un logo au
+    format 300 × 80 occupe 37 × 9,9 mm (valeurs mesurées).
+
+    Taille de fichier conseillée à l'utilisateur (écran de réglage) : 440 × 140 px
+    pour un logo allongé, soit 300 dpi sur les 37 × 12 mm utiles. Le dpi inscrit
+    dans le fichier est sans effet ici — seul le nombre de pixels compte, puisque
+    l'image est redimensionnée au cadre. Ces valeurs et celles de
+    CompanyLogoSection.tsx doivent rester d'accord.
+
+    Une plaque blanche est posée sous l'image : les bandeaux sont bleu foncé ou
+    rouge, où un logo sombre ou opaque serait illisible. Elle donne le même rendu
+    quel que soit le fichier, avec ou sans couche de transparence.
+
+    Ne dessine rien si `logo` est None : le document reste alors exactement ce
+    qu'il était avant l'ajout de cette fonctionnalité.
+    """
+    if not logo:
+        return
+    try:
+        img = ImageReader(io.BytesIO(logo))
+        iw, ih = img.getSize()
+    except Exception:
+        # Fichier illisible (corrompu, format inattendu malgré le contrôle à
+        # l'upload) : on imprime le document sans logo plutôt que de faire échouer
+        # toute la génération — une facture doit sortir.
+        return
+    if not iw or not ih:
+        return
+
+    box_x = right_x - LOGO_BOX_W
+    box_y = center_y - LOGO_BOX_H / 2
+
+    c.setFillColor(colors.white)
+    c.roundRect(box_x, box_y, LOGO_BOX_W, LOGO_BOX_H, 1.2 * mm, fill=1, stroke=0)
+
+    scale = min((LOGO_BOX_W - 2 * _LOGO_PAD) / iw, (LOGO_BOX_H - 2 * _LOGO_PAD) / ih)
+    w, h = iw * scale, ih * scale
+    c.drawImage(
+        img, box_x + (LOGO_BOX_W - w) / 2, box_y + (LOGO_BOX_H - h) / 2,
+        width=w, height=h, mask="auto",
+    )
+
+
 class _State:
     """Tracks y cursor and handles page breaks."""
 
@@ -137,7 +196,7 @@ class _State:
 
 # ── main entry point ──────────────────────────────────────────────────────────
 
-def generate_invoice_pdf(inv: dict, lines: list[dict]) -> bytes:
+def generate_invoice_pdf(inv: dict, lines: list[dict], logo: bytes | None = None) -> bytes:
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     s = _State(c)
@@ -150,12 +209,18 @@ def generate_invoice_pdf(inv: dict, lines: list[dict]) -> bytes:
     c.setFont("Helvetica-Bold", 22)
     c.drawString(ML, PAGE_H - 14 * mm, "FACTURE")
 
+    # Numéro et dates passés à gauche sous le titre : la droite du bandeau revient
+    # au logo. Les deux dates tiennent sur une seule ligne, faute de hauteur pour
+    # une troisième.
     c.setFont("Helvetica-Bold", 11)
-    c.drawRightString(PAGE_W - MR, PAGE_H - 11 * mm, _s(inv.get("invoiceNumber")))
-    c.setFont("Helvetica", 9)
-    c.drawRightString(PAGE_W - MR, PAGE_H - 20 * mm, f"Émise le {_date(inv.get('issuedAt'))}")
+    c.drawString(ML, PAGE_H - 21 * mm, _s(inv.get("invoiceNumber")))
+    c.setFont("Helvetica", 8.5)
+    dates = f"Émise le {_date(inv.get('issuedAt'))}"
     if inv.get("serviceDate"):
-        c.drawRightString(PAGE_W - MR, PAGE_H - 28 * mm, f"Date de prestation : {_date(inv.get('serviceDate'))}")
+        dates += f"   ·   Prestation : {_date(inv.get('serviceDate'))}"
+    c.drawString(ML, PAGE_H - 27 * mm, dates)
+
+    draw_logo(c, logo, PAGE_W - MR, PAGE_H - 16 * mm)
 
     s.y = PAGE_H - 36 * mm
     s.move(8 * mm)
@@ -405,7 +470,7 @@ def generate_invoice_pdf(inv: dict, lines: list[dict]) -> bytes:
 
 # ── Credit note PDF ────────────────────────────────────────────────────────────
 
-def generate_credit_note_pdf(cn: dict, lines: list[dict]) -> bytes:
+def generate_credit_note_pdf(cn: dict, lines: list[dict], logo: bytes | None = None) -> bytes:
     """Generate a PDF for a credit note (avoir). Same layout as invoice, red header."""
     RED = colors.HexColor("#8B1A1A")
 
@@ -420,11 +485,17 @@ def generate_credit_note_pdf(cn: dict, lines: list[dict]) -> bytes:
 
     c.setFont("Helvetica-Bold", 22)
     c.drawString(ML, PAGE_H - 14 * mm, "AVOIR")
+
+    # Même réorganisation que la facture : informations à gauche, logo à droite.
     c.setFont("Helvetica-Bold", 11)
-    c.drawRightString(PAGE_W - MR, PAGE_H - 11 * mm, _s(cn.get("creditNoteNumber")))
-    c.setFont("Helvetica", 9)
-    c.drawRightString(PAGE_W - MR, PAGE_H - 20 * mm, f"Émis le {_date(cn.get('issuedAt'))}")
-    c.drawRightString(PAGE_W - MR, PAGE_H - 28 * mm, f"Réf. facture : {_s(cn.get('sourceInvoiceId'))}")
+    c.drawString(ML, PAGE_H - 21 * mm, _s(cn.get("creditNoteNumber")))
+    c.setFont("Helvetica", 8.5)
+    c.drawString(
+        ML, PAGE_H - 27 * mm,
+        f"Émis le {_date(cn.get('issuedAt'))}   ·   Réf. facture : {_s(cn.get('sourceInvoiceId'))}",
+    )
+
+    draw_logo(c, logo, PAGE_W - MR, PAGE_H - 16 * mm)
 
     s.y = PAGE_H - 36 * mm
     s.move(8 * mm)

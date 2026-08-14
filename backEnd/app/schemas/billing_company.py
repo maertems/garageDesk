@@ -52,5 +52,19 @@ class CompanySettingsResponse(CamelModel):
     vatExemption: bool
     createdAt: datetime
     updatedAt: datetime
+    # Présence du logo (migration 026). Le binaire lui-même n'est jamais dans ce
+    # JSON : il se récupère sur GET /companySettings/logo.
+    hasLogo: bool = False
     # Computed: mandatory fields missing for invoice issuance (not stored in DB)
     missingMandatoryFields: list[str] = []
+
+
+class CompanyLogoUpload(CamelModel):
+    """Téléversement du logo (migration 026).
+
+    Base64 et non multipart : le proxy du frontend force `Content-Type:
+    application/json` et relit le corps en texte, ce qui détruirait un multipart.
+    """
+
+    mimeType: str
+    dataBase64: str

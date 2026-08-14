@@ -20,16 +20,27 @@ export async function GET(
   if (sessionId) headers["X-Session-Id"] = sessionId;
   const res = await fetch(`${BACKEND_URL}${backendPath}`, { headers });
   const contentType = res.headers.get("content-type") ?? "";
-  // Forward binary responses (PDF, etc.) without text decoding
-  if (contentType.startsWith("application/pdf") || contentType.startsWith("application/octet-stream")) {
+  // Forward binary responses (PDF, images, etc.) without text decoding.
+  // Les images passent par ici depuis l'ajout du logo (GET /companySettings/logo) :
+  // sans ce cas, res.text() les corromprait.
+  if (
+    contentType.startsWith("application/pdf") ||
+    contentType.startsWith("application/octet-stream") ||
+    contentType.startsWith("image/")
+  ) {
     const buffer = await res.arrayBuffer();
-    return new NextResponse(buffer, {
-      status: res.status,
-      headers: {
-        "Content-Type": contentType,
-        "Content-Disposition": res.headers.get("Content-Disposition") ?? 'attachment; filename="document.pdf"',
-      },
-    });
+    const headers: Record<string, string> = { "Content-Type": contentType };
+    const disposition = res.headers.get("Content-Disposition");
+    if (disposition) {
+      headers["Content-Disposition"] = disposition;
+    } else if (!contentType.startsWith("image/")) {
+      // Une image est affichée dans la page, pas téléchargée : lui coller un
+      // Content-Disposition de pièce jointe la ferait enregistrer au lieu de
+      // s'afficher dans un <img>.
+      headers["Content-Disposition"] = 'attachment; filename="document.pdf"';
+    }
+    if (contentType.startsWith("image/")) headers["Cache-Control"] = "no-cache";
+    return new NextResponse(buffer, { status: res.status, headers });
   }
   const text = await res.text();
   try {

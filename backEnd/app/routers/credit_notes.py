@@ -20,6 +20,7 @@ from app.schemas.billing_credit_notes import (
     CreditNoteResponse,
 )
 from app.services.billing_pdf import generate_credit_note_pdf
+from app.services.company_logo import fetch_logo
 from app.services.credit_note_service import issue_credit_note
 
 router = APIRouter(prefix="/creditNotes", tags=["credit-notes"])
@@ -152,7 +153,7 @@ def get_credit_note(cn_id: int, current_user: dict = Depends(get_current_user)):
 def download_credit_note_pdf(cn_id: int, current_user: dict = Depends(get_current_user)):
     cn = _fetch_cn_or_404(cn_id)
     lines = _fetch_lines(cn_id)
-    pdf_bytes = generate_credit_note_pdf(cn, lines)
+    pdf_bytes = generate_credit_note_pdf(cn, lines, fetch_logo())
     filename = f"{cn['creditNoteNumber']}.pdf"
     return Response(
         content=pdf_bytes,

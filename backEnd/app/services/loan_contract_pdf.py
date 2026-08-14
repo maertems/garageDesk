@@ -4,7 +4,7 @@ Même socle que billing_pdf.py : reportlab pur Python, Helvetica (Latin-1 couvre
 le français), A4. Les helpers y sont réutilisés plutôt que recopiés.
 
 API publique :
-  generate_loan_contract_pdf(res, vehicle, client, company, damages, terms) → bytes
+  generate_loan_contract_pdf(res, vehicle, client, company, damages, terms, logo) → bytes
 
 Le contrat tient sur une page. Sa partie basse est en deux colonnes séparées par
 un filet vertical — état de départ à gauche, état de restitution à droite — et
@@ -42,6 +42,7 @@ from app.services.billing_pdf import (
     _date,
     _s,
     _wrap,
+    draw_logo,
 )
 
 # ── Libellés français ─────────────────────────────────────────────────────────
@@ -465,6 +466,7 @@ def generate_loan_contract_pdf(
     company: dict | None,
     damages: list[dict],
     terms: str | None,
+    logo: bytes | None = None,
 ) -> bytes:
     """Contrat de prêt, tenant sur une page (hors conditions volumineuses).
 
@@ -484,10 +486,15 @@ def generate_loan_contract_pdf(
     c.setFillColor(colors.white)
     c.setFont("Helvetica-Bold", 17)
     c.drawString(ML, PAGE_H - 11 * mm, "CONTRAT DE PRÊT DE VÉHICULE")
+    # Le numéro rejoint le sous-titre : la droite du bandeau revient au logo, et
+    # ses 21 mm de haut n'offrent pas de troisième ligne.
     c.setFont("Helvetica", 8)
-    c.drawString(ML, PAGE_H - 16.5 * mm, "Véhicule de courtoisie mis à disposition")
-    c.setFont("Helvetica-Bold", 10)
-    c.drawRightString(PAGE_W - MR, PAGE_H - 11 * mm, f"N° {_s(res.get('id'))}")
+    c.drawString(
+        ML, PAGE_H - 16.5 * mm,
+        f"Véhicule de courtoisie mis à disposition   ·   Contrat n° {_s(res.get('id'))}",
+    )
+
+    draw_logo(c, logo, PAGE_W - MR, PAGE_H - 10.5 * mm)
 
     s.y = PAGE_H - 25 * mm
 

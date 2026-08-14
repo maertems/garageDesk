@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader, PageBody } from "@/components/layout/PageHeader";
+import CompanyLogoSection from "./CompanyLogoSection";
 
 type CompanySettings = {
   id: number;
@@ -30,6 +31,7 @@ type CompanySettings = {
   mediatorUrl: string | null;
   mediatorAddress: string | null;
   vatExemption: boolean;
+  hasLogo: boolean;
   missingMandatoryFields: string[];
 };
 
@@ -194,6 +196,15 @@ export default function ParametresPage({ initial }: { initial: CompanySettings |
                     <Input id="ps-capital" type="number" min="0" step="0.01" value={shareCapital} onChange={(e) => setShareCapital(e.target.value)} placeholder="Ex. : 10000" />
                   </div>
                 </div>
+              </div>
+            </section>
+
+            <section className={SECTION}>
+              <header className={SECTION_HEADER}><h3 className={SECTION_TITLE}>Logo</h3></header>
+              <div className={SECTION_BODY}>
+                {/* Les boutons sont en type="button" : ils n'entraînent pas la
+                    soumission du formulaire qui les entoure. */}
+                <CompanyLogoSection initialHasLogo={initial?.hasLogo ?? false} />
               </div>
             </section>
 
