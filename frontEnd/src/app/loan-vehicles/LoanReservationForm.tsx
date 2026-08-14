@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Loader2, Trash2, CheckSquare } from "lucide-react";
+import { Loader2, Trash2, CheckSquare, FileText } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -504,10 +504,23 @@ export default function LoanReservationForm({
               variant="destructive"
               onClick={handleDelete}
               disabled={saving}
-              className="mr-auto"
             >
               <Trash2 className="h-4 w-4" />
               Supprimer
+            </Button>
+          )}
+          {/* Contrat de prêt : seulement en modification, la réservation devant
+              exister pour être imprimée. `mr-auto` le pousse à gauche du pied de
+              modal, à l'écart d'Annuler et d'Enregistrer. */}
+          {isEdit && (
+            <Button asChild type="button" variant="outline" className="mr-auto">
+              <a
+                href={`/api/proxy/loanReservations/${editingId}/contract-pdf`}
+                download={`contrat-pret-${reservation?.loanVehicleLicensePlate ?? editingId}.pdf`}
+              >
+                <FileText className="h-4 w-4" />
+                Contrat de prêt
+              </a>
             </Button>
           )}
           <Button type="button" variant="outline" onClick={onClose}>
