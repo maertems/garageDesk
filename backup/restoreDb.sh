@@ -2,21 +2,31 @@
 #
 # Restauration d'une sauvegarde produite par backupDb.sh.
 #
-#     backup/restoreDb.sh                          liste les sauvegardes disponibles
+#     backup/restoreDb.sh --list                   liste les sauvegardes disponibles
+#     backup/restoreDb.sh                          restaure la PLUS RÉCENTE
 #     backup/restoreDb.sh <fichier.sql.gz>         restaure, après confirmation
 #     backup/restoreDb.sh <fichier.sql.gz> --yes   restaure sans confirmation (automatique)
 #
 # Usage automatique — alimenter une instance de secours avec la dernière
-# sauvegarde reçue de la production :
+# sauvegarde reçue de la production. Sans fichier, le script prend la plus récente
+# de backup/data, ce qui donne une ligne de cron qui n'a rien à savoir des noms :
 #
-#     backup/restoreDb.sh /srv/recu/intranet_2026-08-17_040001.sql.gz --yes
+#     0 * * * * /chemin/backup/restoreDb.sh --yes >> /var/log/restoreDb.log 2>&1
+#
+# « La plus récente » se juge sur l'horodatage porté par le NOM, pas sur la date de
+# modification : un transfert par scp sans -p réécrit les mtimes et l'ordre réel
+# serait perdu. C'est la mesure qu'emploie aussi le garde-fou ci-dessous, sans quoi
+# le script pourrait élire un fichier que sa propre protection refuserait ensuite.
+#
+# Relancé alors que rien de neuf n'est arrivé, il sort en 0 sans toucher à la base :
+# le cron peut donc tourner plus souvent que les sauvegardes n'arrivent.
 #
 # Le script REFUSE alors une sauvegarde plus ancienne que la dernière qu'il a
 # restaurée, pour que l'instance de secours ne remonte jamais dans le temps. Le
 # repère est gardé dans backup/data/.derniere-restauration.
 #
 # C'est le script le plus dangereux du dépôt : il ÉCRASE la base désignée par
-# deploy.env. Il est donc bâti pour rendre l'accident difficile :
+# backup/.env. Il est donc bâti pour rendre l'accident difficile :
 #
 #   * il montre la cible et l'état actuel de la base AVANT de toucher à quoi que
 #     ce soit, et demande de saisir le nom de la base pour confirmer ;
@@ -37,10 +47,12 @@ BACKUP_DIR="$SCRIPT_DIR/data"
 DUMP=""
 FORCE=""
 ALLOW_SHRINK=0
+LISTER=0
 for arg in "$@"; do
   case "$arg" in
     --yes) FORCE="--yes" ;;
     --allow-shrink) ALLOW_SHRINK=1 ;;
+    --list) LISTER=1 ;;
     -*) echo "restoreDb : option inconnue — $arg" >&2; exit 1 ;;
     *) DUMP="$arg" ;;
   esac
@@ -86,14 +98,67 @@ MYSQL_DATABASE="${RESTORE_MYSQL_DATABASE:-${MYSQL_DATABASE:-}}"
 command -v mysql >/dev/null || { echo "restoreDb : client mysql introuvable." >&2; exit 1; }
 command -v gzip >/dev/null || { echo "restoreDb : gzip introuvable." >&2; exit 1; }
 
-# ── Sans argument : lister ce qui est disponible ───────────────────────────────
-if [ -z "$DUMP" ]; then
+# Horodatage d'une sauvegarde, tiré de son NOM (`base_AAAA-MM-JJ_HHMMSS.sql.gz`) et
+# non de sa date de modification : un transfert par `scp` sans `-p` réécrit les
+# mtimes. Sert à la fois à choisir la plus récente et à refuser une antérieure —
+# les deux doivent s'appuyer sur la même mesure, sinon le script pourrait
+# sélectionner un fichier que son propre garde-fou refuse ensuite.
+horodatage() {
+  local nom
+  nom="$(basename "$1")"
+  if [[ "$nom" =~ ([0-9]{4})-([0-9]{2})-([0-9]{2})_([0-9]{6}) ]]; then
+    echo "${BASH_REMATCH[1]}${BASH_REMATCH[2]}${BASH_REMATCH[3]}${BASH_REMATCH[4]}"
+  else
+    date -r "$1" '+%Y%m%d%H%M%S'
+  fi
+}
+
+# La plus récente des sauvegardes de $BACKUP_DIR, ou rien. Le motif n'est pas
+# récursif : le sous-répertoire avant-restauration/ est donc exclu d'office, et
+# c'est heureux — choisir un filet de restauration précédent n'aurait aucun sens.
+# Les fichiers .INCOMPLET ne correspondent pas au motif *.sql.gz non plus.
+plus_recente() {
+  local f meilleure="" ts meilleur_ts=""
+  for f in "$BACKUP_DIR"/*.sql.gz; do
+    [ -f "$f" ] || continue
+    ts="$(horodatage "$f")"
+    # Horodatage non numérique — nom inattendu et `date -r` en échec : on écarte le
+    # fichier au lieu de le comparer. Le retenir serait pire que l'ignorer : `[ -gt ]`
+    # sort en erreur sur un opérande non numérique, donc toutes les comparaisons
+    # suivantes seraient fausses et ce fichier resterait élu jusqu'au bout.
+    case "$ts" in
+      ''|*[!0-9]*) continue ;;
+    esac
+    if [ -z "$meilleur_ts" ] || [ "$ts" -gt "$meilleur_ts" ]; then
+      meilleur_ts="$ts"; meilleure="$f"
+    fi
+  done
+  echo "$meilleure"
+}
+
+# ── --list : montrer ce qui est disponible, sans rien restaurer ────────────────
+#
+# Trié par l'horodatage du NOM, comme plus_recente, et l'élue est désignée : un
+# listage classé par date de modification afficherait un autre ordre que celui qui
+# décide, et donnerait à croire qu'un lancement sans argument prendrait la première
+# de la liste.
+if [ "$LISTER" = "1" ]; then
   echo "Sauvegardes disponibles dans $BACKUP_DIR :"
-  if ! ls -1t "$BACKUP_DIR"/*.sql.gz 2>/dev/null | head -20 | while read -r f; do
-        printf '  %-52s %8s  %s\n' "$(basename "$f")" \
-          "$(du -h "$f" | cut -f1)" "$(date -r "$f" '+%d/%m/%Y %H:%M')"
-      done | grep .; then
+  ELUE="$(plus_recente)"
+  NB=0
+  for f in "$BACKUP_DIR"/*.sql.gz; do [ -f "$f" ] && NB=$((NB + 1)); done
+  if [ "$NB" -eq 0 ]; then
     echo "  (aucune)"
+  else
+    for f in "$BACKUP_DIR"/*.sql.gz; do
+      [ -f "$f" ] || continue
+      printf '%s\t%s\n' "$(horodatage "$f")" "$f"
+    done | sort -rn | head -20 | while IFS="$(printf '\t')" read -r ts f; do
+      marque=""
+      [ "$f" = "$ELUE" ] && marque="  <- retenue sans argument"
+      printf '  %-52s %8s  %s%s\n' "$(basename "$f")" \
+        "$(du -h "$f" | cut -f1)" "$(date -r "$f" '+%d/%m/%Y %H:%M')" "$marque"
+    done
   fi
   # Les fichiers marqués incomplets par backupDb.sh sont signalés, pas proposés.
   if ls -1 "$BACKUP_DIR"/*.INCOMPLET >/dev/null 2>&1; then
@@ -102,9 +167,34 @@ if [ -z "$DUMP" ]; then
     ls -1 "$BACKUP_DIR"/*.INCOMPLET | while read -r f; do echo "  $(basename "$f")"; done
   fi
   echo
-  echo "Usage : $0 <fichier.sql.gz> [--yes]"
+  echo "Usage : $0 [fichier.sql.gz] [--yes] [--allow-shrink]"
+  echo "        sans fichier, la plus récente est retenue"
   exit 0
 fi
+
+# ── Sans argument : prendre la sauvegarde la plus récente ──────────────────────
+#
+# C'est ce que veut l'usage automatique : le cron appelle `restoreDb.sh --yes` et
+# le script se débrouille. Le garde-fou d'antériorité fait le reste — si la plus
+# récente a déjà été restaurée, il sortira en 0 sans rien faire.
+if [ -z "$DUMP" ]; then
+  DUMP="$(plus_recente)"
+  if [ -z "$DUMP" ]; then
+    echo "restoreDb : aucune sauvegarde exploitable dans $BACKUP_DIR." >&2
+    # Des .INCOMPLET et rien d'autre, c'est le symptôme d'un transfert coupé ou
+    # d'une sauvegarde interrompue, pas d'un répertoire vide. Le dire évite de
+    # chercher longtemps pourquoi « il n'y a rien » alors que des fichiers sont là.
+    if ls -1 "$BACKUP_DIR"/*.INCOMPLET >/dev/null 2>&1; then
+      echo "  Des fichiers .INCOMPLET sont présents : sauvegarde ou transfert" >&2
+      echo "  interrompu. Ils ne sont pas restaurables — voir --list." >&2
+    else
+      echo "  Lancer backup/backupDb.sh, ou passer un fichier en argument." >&2
+    fi
+    exit 1
+  fi
+  echo "restoreDb : plus récente sauvegarde retenue — $(basename "$DUMP")"
+fi
+
 
 [ -f "$DUMP" ] || { echo "restoreDb : fichier introuvable — $DUMP" >&2; exit 1; }
 case "$DUMP" in
@@ -157,16 +247,6 @@ gzip -cd "$DUMP" | tail -5 | grep -q "Dump completed" \
 # des sauvegardes serait perdu. On se rabat sur la mtime si le nom ne porte pas
 # d'horodatage reconnaissable.
 ETAT_FILE="$BACKUP_DIR/.derniere-restauration"
-
-horodatage() {
-  local nom
-  nom="$(basename "$1")"
-  if [[ "$nom" =~ ([0-9]{4})-([0-9]{2})-([0-9]{2})_([0-9]{6}) ]]; then
-    echo "${BASH_REMATCH[1]}${BASH_REMATCH[2]}${BASH_REMATCH[3]}${BASH_REMATCH[4]}"
-  else
-    date -r "$1" '+%Y%m%d%H%M%S'
-  fi
-}
 
 DUMP_TS="$(horodatage "$DUMP")"
 if [ -f "$ETAT_FILE" ]; then
