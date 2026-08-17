@@ -46,3 +46,9 @@ productivite/
 
 # Réglages Claude Code personnels (permissions locales)
 .claude/settings.local.json
+
+# Sauvegardes de la base (backupDb.sh). JAMAIS dans le dépôt : il est public et un
+# dump contient l'intégralité des données clients.
+backups/
+*.sql.gz
+*.sql.bz2
