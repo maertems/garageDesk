@@ -13,6 +13,10 @@ fi
 BACKEND_PORT="${BACKEND_PORT:-7780}"
 FRONTEND_PORT="${FRONTEND_PORT:-8081}"
 APP_NAME="${APP_NAME:-GarageDesk}"
+# Même variable que pour le backend, lue dans le même deploy.env : le front s'en
+# sert uniquement pour signaler à l'écran que les rappels ne partent pas d'ici.
+# Défaut 0 comme côté backend, donc coin rouge tant qu'elle n'est pas déclarée.
+SCHEDULER_ENABLED="${SCHEDULER_ENABLED:-0}"
 
 cd "$SCRIPT_DIR/frontEnd"
 
@@ -37,6 +41,7 @@ sudo docker rm gd-frontend 2>/dev/null
 sudo docker run -d -p "${FRONTEND_PORT}:80" \
   -e BACKEND_URL="http://${BACKEND_HOST}:${BACKEND_PORT}" \
   -e APP_NAME="$APP_NAME" \
+  -e SCHEDULER_ENABLED="$SCHEDULER_ENABLED" \
   --name gd-frontend \
   gd-frontend
 

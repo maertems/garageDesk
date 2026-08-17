@@ -13,6 +13,14 @@ export const dynamic = "force-dynamic";
 // serveur à chaque requête, donc modifiable sans reconstruire l'image Docker).
 const appName = process.env.APP_NAME || "GarageDesk";
 
+// Même variable que celle qui commande l'ordonnanceur du backend, lue dans le
+// même deploy.env. Le front ne s'en sert que pour teinter le coin haut gauche :
+// sur une instance de secours, on voit d'un coup d'œil qu'aucun rappel ne part
+// d'ici. Les formes acceptées comme fausses sont celles du backend.
+const remindersOff = ["0", "false", "no", "off", ""].includes(
+  (process.env.SCHEDULER_ENABLED ?? "0").trim().toLowerCase()
+);
+
 export const metadata: Metadata = {
   title: `${appName} — Intranet`,
   description: "Gestion des rendez-vous garage",
@@ -22,7 +30,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="fr" suppressHydrationWarning>
       <body>
-        <AppShell appName={appName}>{children}</AppShell>
+        <AppShell appName={appName} remindersOff={remindersOff}>
+          {children}
+        </AppShell>
       </body>
     </html>
   );

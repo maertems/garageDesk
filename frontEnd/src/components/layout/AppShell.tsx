@@ -4,7 +4,15 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import Sidebar from "./Sidebar";
 
-export default function AppShell({ children, appName }: { children: React.ReactNode; appName: string }) {
+export default function AppShell({
+  children,
+  appName,
+  remindersOff = false,
+}: {
+  children: React.ReactNode;
+  appName: string;
+  remindersOff?: boolean;
+}) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
 
@@ -31,7 +39,7 @@ export default function AppShell({ children, appName }: { children: React.ReactN
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar appName={appName} />
+      <Sidebar appName={appName} remindersOff={remindersOff} />
       <main
         className="flex-1 transition-[padding] duration-200 ease-out"
         style={{ paddingLeft: collapsed ? 68 : 232 }}

@@ -52,7 +52,13 @@ const group3: NavLink[] = [
 
 const atelierLink: NavLink = { href: "/atelier", label: "Atelier", icon: Wrench, matchPrefix: "/atelier" };
 
-export default function Sidebar({ appName }: { appName: string }) {
+export default function Sidebar({
+  appName,
+  remindersOff = false,
+}: {
+  appName: string;
+  remindersOff?: boolean;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [role, setRole] = useState<string | null>(null);
@@ -125,7 +131,22 @@ export default function Sidebar({ appName }: { appName: string }) {
         collapsed ? "w-[68px]" : "w-[232px]"
       )}
     >
-      <div className={cn("flex h-14 items-center border-b px-4", collapsed && "justify-center px-0")}>
+      {/* Teinte rouge légère quand les rappels ne partent pas de cette instance
+          (SCHEDULER_ENABLED=0) : sur une instance de secours, le coin haut gauche
+          suffit à savoir où l'on travaille sans lire l'URL. Volontairement discret
+          — c'est un repère, pas une alerte. */}
+      <div
+        className={cn(
+          "flex h-14 items-center border-b px-4",
+          collapsed && "justify-center px-0",
+          remindersOff && "bg-red-50 border-red-200 dark:bg-red-950/40 dark:border-red-900"
+        )}
+        title={
+          remindersOff
+            ? "Aucun rappel de rendez-vous n'est envoyé depuis cette instance."
+            : undefined
+        }
+      >
         {collapsed ? (
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-sm">
             {appName.charAt(0).toUpperCase()}

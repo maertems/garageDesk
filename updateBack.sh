@@ -15,6 +15,11 @@ fi
 : "${MYSQL_DATABASE:?MYSQL_DATABASE manquant — copier deploy.env.example en deploy.env et le renseigner}"
 BACKEND_PORT="${BACKEND_PORT:-7780}"
 APP_NAME="${APP_NAME:-GarageDesk}"
+# Envoi des rappels de RDV. Défaut 0, variable absente comprise : il faut
+# déclarer explicitement l'instance qui envoie, avec SCHEDULER_ENABLED=1 dans
+# deploy.env. Un oubli suspend les rappels ; l'oubli inverse enverrait un second
+# SMS à chaque client.
+SCHEDULER_ENABLED="${SCHEDULER_ENABLED:-0}"
 
 cd "$SCRIPT_DIR/backEnd"
 
@@ -42,6 +47,7 @@ sudo docker run -d -p "${BACKEND_PORT}:80" \
   -e MYSQL_PASSWORD="$MYSQL_PASSWORD" \
   -e MYSQL_DATABASE="$MYSQL_DATABASE" \
   -e APP_NAME="$APP_NAME" \
+  -e SCHEDULER_ENABLED="$SCHEDULER_ENABLED" \
   --name gd-backend \
   gd-api
 
