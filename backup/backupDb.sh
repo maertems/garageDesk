@@ -2,7 +2,7 @@
 #
 # Sauvegarde complète de la base MySQL. Une exécution = un fichier.
 #
-#     0 */3 * * * /chemin/vers/backupDb.sh >> /var/log/backupDb.log 2>&1
+#     0 */3 * * * /chemin/vers/backup/backupDb.sh >> /var/log/backupDb.log 2>&1
 #
 # Ce script ne fait QUE la sauvegarde :
 #   * une seule exécution à la fois : un verrou en tête refuse le démarrage si une
@@ -16,8 +16,8 @@
 # Uniquement des sauvegardes complètes, pas de variante allégée : la base pèse
 # 21 Mo, et la restauration reste ainsi une seule commande.
 #
-# Usage :  ./backupDb.sh [répertoire_de_destination]
-# Défaut : ./backups
+# Usage :  backup/backupDb.sh [répertoire_de_destination]
+# Défaut : backup/data
 #
 # Identifiants lus dans deploy.env, comme updateBack.sh et updateFront.sh — rien
 # n'est écrit en dur ici, le dépôt étant public.
@@ -28,7 +28,9 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEST="${1:-$SCRIPT_DIR/backups}"
+# deploy.env vit à la racine du dépôt, les scripts un niveau en dessous.
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+DEST="${1:-$SCRIPT_DIR/data}"
 
 # ── Verrou : une seule sauvegarde à la fois ───────────────────────────────────
 #
@@ -56,16 +58,16 @@ else
   echo "backupDb : flock absent, exécution sans verrou." >&2
 fi
 
-if [ -f "$SCRIPT_DIR/deploy.env" ]; then
+if [ -f "$ROOT_DIR/deploy.env" ]; then
   set -a
-  source "$SCRIPT_DIR/deploy.env"
+  source "$ROOT_DIR/deploy.env"
   set +a
 fi
 
-: "${MYSQL_HOST:?MYSQL_HOST manquant — renseigner deploy.env}"
-: "${MYSQL_USER:?MYSQL_USER manquant — renseigner deploy.env}"
-: "${MYSQL_PASSWORD:?MYSQL_PASSWORD manquant — renseigner deploy.env}"
-: "${MYSQL_DATABASE:?MYSQL_DATABASE manquant — renseigner deploy.env}"
+: "${MYSQL_HOST:?MYSQL_HOST manquant — renseigner deploy.env à la racine du dépôt}"
+: "${MYSQL_USER:?MYSQL_USER manquant — renseigner deploy.env à la racine du dépôt}"
+: "${MYSQL_PASSWORD:?MYSQL_PASSWORD manquant — renseigner deploy.env à la racine du dépôt}"
+: "${MYSQL_DATABASE:?MYSQL_DATABASE manquant — renseigner deploy.env à la racine du dépôt}"
 MYSQL_PORT="${MYSQL_PORT:-3306}"
 
 command -v mysqldump >/dev/null || { echo "backupDb : mysqldump introuvable." >&2; exit 1; }
@@ -157,7 +159,7 @@ echo "backupDb : $OUT ($SIZE, $TABLES tables) — total du répertoire : $TOTAL"
 # traiter séparément, au choix :
 #
 #   * une tâche cron dédiée, pour ne garder que les 30 derniers jours :
-#       find /chemin/vers/backups -name '*.sql.gz' -mtime +30 -delete
+#       find /chemin/vers/backup/data -name '*.sql.gz' -mtime +30 -delete
 #
 #   * ou logrotate, si l'on préfère une configuration déclarative.
 #

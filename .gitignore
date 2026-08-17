@@ -47,8 +47,13 @@ productivite/
 # Réglages Claude Code personnels (permissions locales)
 .claude/settings.local.json
 
-# Sauvegardes de la base (backupDb.sh). JAMAIS dans le dépôt : il est public et un
-# dump contient l'intégralité des données clients.
+# Sauvegardes de la base (backup/backupDb.sh). JAMAIS dans le dépôt : il est
+# public et un dump contient l'intégralité des données clients.
+#
+# Le contenu de backup/data est ignoré mais le répertoire est conservé, via un
+# .gitkeep explicitement excepté : les scripts s'attendent à le trouver.
+backup/data/*
+!backup/data/.gitkeep
 backups/
 *.sql.gz
 *.sql.bz2

@@ -2,18 +2,18 @@
 #
 # Restauration d'une sauvegarde produite par backupDb.sh.
 #
-#     ./restoreDb.sh                          liste les sauvegardes disponibles
-#     ./restoreDb.sh <fichier.sql.gz>         restaure, après confirmation
-#     ./restoreDb.sh <fichier.sql.gz> --yes   restaure sans confirmation (automatique)
+#     backup/restoreDb.sh                          liste les sauvegardes disponibles
+#     backup/restoreDb.sh <fichier.sql.gz>         restaure, après confirmation
+#     backup/restoreDb.sh <fichier.sql.gz> --yes   restaure sans confirmation (automatique)
 #
 # Usage automatique — alimenter une instance de secours avec la dernière
 # sauvegarde reçue de la production :
 #
-#     ./restoreDb.sh /srv/recu/intranet_2026-08-17_040001.sql.gz --yes
+#     backup/restoreDb.sh /srv/recu/intranet_2026-08-17_040001.sql.gz --yes
 #
 # Le script REFUSE alors une sauvegarde plus ancienne que la dernière qu'il a
 # restaurée, pour que l'instance de secours ne remonte jamais dans le temps. Le
-# repère est gardé dans backups/.derniere-restauration.
+# repère est gardé dans backup/data/.derniere-restauration.
 #
 # C'est le script le plus dangereux du dépôt : il ÉCRASE la base désignée par
 # deploy.env. Il est donc bâti pour rendre l'accident difficile :
@@ -31,7 +31,9 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKUP_DIR="$SCRIPT_DIR/backups"
+# deploy.env vit à la racine du dépôt, les scripts un niveau en dessous.
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+BACKUP_DIR="$SCRIPT_DIR/data"
 # Les arguments sont analysés sans ordre imposé : en automatique, on écrit
 # volontiers `--yes` avant le fichier.
 DUMP=""
@@ -46,16 +48,16 @@ for arg in "$@"; do
   esac
 done
 
-if [ -f "$SCRIPT_DIR/deploy.env" ]; then
+if [ -f "$ROOT_DIR/deploy.env" ]; then
   set -a
-  source "$SCRIPT_DIR/deploy.env"
+  source "$ROOT_DIR/deploy.env"
   set +a
 fi
 
-: "${MYSQL_HOST:?MYSQL_HOST manquant — renseigner deploy.env}"
-: "${MYSQL_USER:?MYSQL_USER manquant — renseigner deploy.env}"
-: "${MYSQL_PASSWORD:?MYSQL_PASSWORD manquant — renseigner deploy.env}"
-: "${MYSQL_DATABASE:?MYSQL_DATABASE manquant — renseigner deploy.env}"
+: "${MYSQL_HOST:?MYSQL_HOST manquant — renseigner deploy.env à la racine du dépôt}"
+: "${MYSQL_USER:?MYSQL_USER manquant — renseigner deploy.env à la racine du dépôt}"
+: "${MYSQL_PASSWORD:?MYSQL_PASSWORD manquant — renseigner deploy.env à la racine du dépôt}"
+: "${MYSQL_DATABASE:?MYSQL_DATABASE manquant — renseigner deploy.env à la racine du dépôt}"
 MYSQL_PORT="${MYSQL_PORT:-3306}"
 
 command -v mysql >/dev/null || { echo "restoreDb : client mysql introuvable." >&2; exit 1; }
@@ -218,7 +220,7 @@ AVANT_DIR="$BACKUP_DIR/avant-restauration"
 if [ "$ETAT" -eq 0 ]; then
   FILET="sans objet — la base cible est vide"
 elif [ -x "$SCRIPT_DIR/backupDb.sh" ]; then
-  FILET="oui, dans backups/avant-restauration/"
+  FILET="oui, dans backup/data/avant-restauration/"
 else
   FILET="NON (backupDb.sh absent) — OPÉRATION IRRÉVERSIBLE"
 fi
