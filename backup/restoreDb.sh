@@ -63,11 +63,25 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
   set +a
 fi
 
-: "${MYSQL_HOST:?MYSQL_HOST manquant — renseigner backup/.env (voir backup/.env.example)}"
-: "${MYSQL_USER:?MYSQL_USER manquant — renseigner backup/.env (voir backup/.env.example)}"
-: "${MYSQL_PASSWORD:?MYSQL_PASSWORD manquant — renseigner backup/.env (voir backup/.env.example)}"
-: "${MYSQL_DATABASE:?MYSQL_DATABASE manquant — renseigner backup/.env (voir backup/.env.example)}"
-MYSQL_PORT="${MYSQL_PORT:-3306}"
+# Identifiants : un préfixe par usage, avec repli sur les variables communes.
+#
+# Sur une machine de sauvegarde, les deux scripts ne parlent PAS à la même base :
+# backupDb interroge la production (distante), restoreDb écrit dans la base locale
+# de secours. Confondre les deux ferait écraser la production par un dump — d'où
+# des variables distinctes plutôt qu'un seul jeu.
+#
+# Ordre de résolution : RESTORE_MYSQL_X, puis MYSQL_X, puis erreur. Un .env qui ne
+# déclare que les MYSQL_* communes continue donc de fonctionner.
+MYSQL_HOST="${RESTORE_MYSQL_HOST:-${MYSQL_HOST:-}}"
+MYSQL_PORT="${RESTORE_MYSQL_PORT:-${MYSQL_PORT:-3306}}"
+MYSQL_USER="${RESTORE_MYSQL_USER:-${MYSQL_USER:-}}"
+MYSQL_PASSWORD="${RESTORE_MYSQL_PASSWORD:-${MYSQL_PASSWORD:-}}"
+MYSQL_DATABASE="${RESTORE_MYSQL_DATABASE:-${MYSQL_DATABASE:-}}"
+
+: "${MYSQL_HOST:?MYSQL_HOST manquant — renseigner RESTORE_MYSQL_HOST ou MYSQL_HOST dans backup/.env}"
+: "${MYSQL_USER:?MYSQL_USER manquant — renseigner RESTORE_MYSQL_USER ou MYSQL_USER dans backup/.env}"
+: "${MYSQL_PASSWORD:?MYSQL_PASSWORD manquant — renseigner RESTORE_MYSQL_PASSWORD ou MYSQL_PASSWORD dans backup/.env}"
+: "${MYSQL_DATABASE:?MYSQL_DATABASE manquant — renseigner RESTORE_MYSQL_DATABASE ou MYSQL_DATABASE dans backup/.env}"
 
 command -v mysql >/dev/null || { echo "restoreDb : client mysql introuvable." >&2; exit 1; }
 command -v gzip >/dev/null || { echo "restoreDb : gzip introuvable." >&2; exit 1; }
