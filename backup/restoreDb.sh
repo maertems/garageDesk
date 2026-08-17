@@ -83,6 +83,7 @@ journal() {
 # Affiche ET journalise. Deux variantes, pour que le journal distingue ce qui a été
 # dit à l'opérateur de ce qui a été signalé comme une anomalie.
 dire()    { echo "$*"; journal "$*"; }
+avertir() { echo "$*" >&2; journal "AVIS $*"; }
 alerter() { echo "$*" >&2; journal "ERREUR $*"; }
 
 # Le code de sortie est journalisé quoi qu'il arrive — y compris sur une sortie que
@@ -447,7 +448,7 @@ if [ "$ETAT" -gt 0 ] && [ -x "$SCRIPT_DIR/backupDb.sh" ]; then
   if [ "$NB_APRES" -gt "$NB_AVANT" ]; then
     dire "  état précédent conservé dans $AVANT_DIR/"
   elif [ "$FORCE" = "--yes" ]; then
-    alerter "restoreDb : la sauvegarde préalable n'a rien produit — on continue (--yes)."
+    avertir "restoreDb : la sauvegarde préalable n'a rien produit — on continue (--yes)."
   else
     alerter "restoreDb : la sauvegarde préalable n'a produit aucun fichier, restauration abandonnée."
     echo "  Restauration ABANDONNÉE : sans elle, l'opération serait irréversible." >&2
