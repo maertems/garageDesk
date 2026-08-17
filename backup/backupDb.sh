@@ -131,10 +131,18 @@ fi
 # --databases : ajoute le CREATE DATABASE et le USE, ce qui rend le fichier
 #   restaurable sur un serveur vierge sans préparation. Prend aussi toutes les
 #   tables existantes — utile, `schema.sql` ayant dérivé des migrations.
+# --no-tablespaces : sans elle, mysqldump interroge les tablespaces et échoue sur
+#   « you need (at least one of) the PROCESS privilege(s) », observé au premier
+#   essai réel. L'alternative — accorder PROCESS — est à écarter : c'est un
+#   privilège GLOBAL (ON *.*) qui laisse voir toutes les requêtes en cours du
+#   serveur, y compris celles des autres bases. Disproportionné pour un compte de
+#   sauvegarde, alors que l'information de tablespace ne sert à rien ici : les
+#   tables sont dans le tablespace InnoDB par défaut.
 mysqldump --defaults-extra-file="$CNF" \
       --single-transaction \
       --quick \
       --hex-blob \
+      --no-tablespaces \
       --default-character-set=utf8mb4 \
       --routines --triggers --events \
       --databases "$MYSQL_DATABASE" \
