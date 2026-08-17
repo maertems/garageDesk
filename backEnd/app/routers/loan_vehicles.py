@@ -1,5 +1,7 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
-from app.database import db_cursor
+from app.database import db_cursor, db_transaction
 from app.auth import get_current_user
 from app.schemas.loan_vehicle import LoanVehicleCreate, LoanVehicleUpdate, LoanVehicleResponse
 from app.schemas.loan_vehicle_damage import LoanVehicleDamageCreate, LoanVehicleDamageResponse
@@ -77,10 +79,28 @@ def update_loan_vehicle(
 
 @router.delete("/{vehicle_id}", status_code=204)
 def delete_loan_vehicle(vehicle_id: int, current_user: dict = Depends(get_current_user)):
-    with db_cursor(commit=True) as cur:
+    # db_transaction et non db_cursor : les deux suppressions doivent réussir ou
+    # échouer ensemble, et c'est l'outil que le projet réserve aux opérations
+    # atomiques multi-instructions. Il annule explicitement sur exception, au lieu
+    # de s'en remettre à la fermeture de connexion.
+    with db_transaction() as cur:
+        # Les dégâts d'abord. La base ne porte aucune contrainte de clé étrangère
+        # — règle du projet, les dépendances sont gérées ici — donc rien ne les
+        # supprimerait à notre place : ils resteraient orphelins, et ressurgiraient
+        # sur le prochain véhicule qui hériterait de cet identifiant.
+        #
+        # Dans cet ordre, et dans la même transaction : supprimer le véhicule
+        # d'abord laisserait une fenêtre où ses dégâts pointent dans le vide.
+        cur.execute("DELETE FROM loanVehicleDamages WHERE loanVehicleId = %s", (vehicle_id,))
+        damages = cur.rowcount
+
         cur.execute("DELETE FROM loanVehicles WHERE id = %s", (vehicle_id,))
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail={"code": "notFound", "message": "Loan vehicle not found"})
+        if damages:
+            logging.getLogger(__name__).info(
+                "Véhicule de prêt %s supprimé avec %s dégât(s) associé(s)", vehicle_id, damages
+            )
 
 
 # ---------------------------------------------------------------------------
