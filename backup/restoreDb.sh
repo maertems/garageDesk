@@ -27,12 +27,10 @@
 #   * il partage le verrou de backupDb.sh, ce qui empêche une sauvegarde
 #     automatique de photographier la base en cours de restauration.
 #
-# Identifiants lus dans deploy.env, comme les autres scripts.
+# Identifiants lus dans backup/.env, à côté de ce script. Voir backup/.env.example.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# deploy.env vit à la racine du dépôt, les scripts un niveau en dessous.
-ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BACKUP_DIR="$SCRIPT_DIR/data"
 # Les arguments sont analysés sans ordre imposé : en automatique, on écrit
 # volontiers `--yes` avant le fichier.
@@ -48,16 +46,27 @@ for arg in "$@"; do
   esac
 done
 
-if [ -f "$ROOT_DIR/deploy.env" ]; then
+# Identifiants lus dans le .env placé À CÔTÉ DE CE SCRIPT, et non dans le
+# deploy.env de la racine : les scripts de sauvegarde deviennent autonomes, et
+# peuvent tourner sur une machine qui n'héberge pas l'application et n'a donc
+# aucune raison de détenir toute sa configuration de déploiement.
+#
+# Le fichier n'est pas obligatoire : des variables déjà présentes dans
+# l'environnement font l'affaire, ce qui laisse la porte ouverte à un cron qui
+# les fournirait lui-même. Ce sont les contrôles ci-dessous qui tranchent.
+#
+# `.env` est ignoré par git quel que soit le répertoire (motif sans chemin dans
+# .gitignore) : il ne partira jamais dans le dépôt public. Voir .env.example.
+if [ -f "$SCRIPT_DIR/.env" ]; then
   set -a
-  source "$ROOT_DIR/deploy.env"
+  source "$SCRIPT_DIR/.env"
   set +a
 fi
 
-: "${MYSQL_HOST:?MYSQL_HOST manquant — renseigner deploy.env à la racine du dépôt}"
-: "${MYSQL_USER:?MYSQL_USER manquant — renseigner deploy.env à la racine du dépôt}"
-: "${MYSQL_PASSWORD:?MYSQL_PASSWORD manquant — renseigner deploy.env à la racine du dépôt}"
-: "${MYSQL_DATABASE:?MYSQL_DATABASE manquant — renseigner deploy.env à la racine du dépôt}"
+: "${MYSQL_HOST:?MYSQL_HOST manquant — renseigner backup/.env (voir backup/.env.example)}"
+: "${MYSQL_USER:?MYSQL_USER manquant — renseigner backup/.env (voir backup/.env.example)}"
+: "${MYSQL_PASSWORD:?MYSQL_PASSWORD manquant — renseigner backup/.env (voir backup/.env.example)}"
+: "${MYSQL_DATABASE:?MYSQL_DATABASE manquant — renseigner backup/.env (voir backup/.env.example)}"
 MYSQL_PORT="${MYSQL_PORT:-3306}"
 
 command -v mysql >/dev/null || { echo "restoreDb : client mysql introuvable." >&2; exit 1; }

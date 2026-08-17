@@ -19,8 +19,8 @@
 # Usage :  backup/backupDb.sh [répertoire_de_destination]
 # Défaut : backup/data
 #
-# Identifiants lus dans deploy.env, comme updateBack.sh et updateFront.sh — rien
-# n'est écrit en dur ici, le dépôt étant public.
+# Identifiants lus dans backup/.env, à côté de ce script — rien n'est écrit en dur
+# ici, le dépôt étant public. Voir backup/.env.example.
 #
 # Sort en erreur (code non nul) dès qu'une étape échoue : cron enverra alors la
 # sortie par courriel. Une sauvegarde qui échoue en silence est pire qu'absente,
@@ -28,8 +28,6 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# deploy.env vit à la racine du dépôt, les scripts un niveau en dessous.
-ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DEST="${1:-$SCRIPT_DIR/data}"
 
 # ── Verrou : une seule sauvegarde à la fois ───────────────────────────────────
@@ -58,16 +56,27 @@ else
   echo "backupDb : flock absent, exécution sans verrou." >&2
 fi
 
-if [ -f "$ROOT_DIR/deploy.env" ]; then
+# Identifiants lus dans le .env placé À CÔTÉ DE CE SCRIPT, et non dans le
+# deploy.env de la racine : les scripts de sauvegarde deviennent autonomes, et
+# peuvent tourner sur une machine qui n'héberge pas l'application et n'a donc
+# aucune raison de détenir toute sa configuration de déploiement.
+#
+# Le fichier n'est pas obligatoire : des variables déjà présentes dans
+# l'environnement font l'affaire, ce qui laisse la porte ouverte à un cron qui
+# les fournirait lui-même. Ce sont les contrôles ci-dessous qui tranchent.
+#
+# `.env` est ignoré par git quel que soit le répertoire (motif sans chemin dans
+# .gitignore) : il ne partira jamais dans le dépôt public. Voir .env.example.
+if [ -f "$SCRIPT_DIR/.env" ]; then
   set -a
-  source "$ROOT_DIR/deploy.env"
+  source "$SCRIPT_DIR/.env"
   set +a
 fi
 
-: "${MYSQL_HOST:?MYSQL_HOST manquant — renseigner deploy.env à la racine du dépôt}"
-: "${MYSQL_USER:?MYSQL_USER manquant — renseigner deploy.env à la racine du dépôt}"
-: "${MYSQL_PASSWORD:?MYSQL_PASSWORD manquant — renseigner deploy.env à la racine du dépôt}"
-: "${MYSQL_DATABASE:?MYSQL_DATABASE manquant — renseigner deploy.env à la racine du dépôt}"
+: "${MYSQL_HOST:?MYSQL_HOST manquant — renseigner backup/.env (voir backup/.env.example)}"
+: "${MYSQL_USER:?MYSQL_USER manquant — renseigner backup/.env (voir backup/.env.example)}"
+: "${MYSQL_PASSWORD:?MYSQL_PASSWORD manquant — renseigner backup/.env (voir backup/.env.example)}"
+: "${MYSQL_DATABASE:?MYSQL_DATABASE manquant — renseigner backup/.env (voir backup/.env.example)}"
 MYSQL_PORT="${MYSQL_PORT:-3306}"
 
 command -v mysqldump >/dev/null || { echo "backupDb : mysqldump introuvable." >&2; exit 1; }
