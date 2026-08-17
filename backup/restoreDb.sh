@@ -11,7 +11,7 @@
 # sauvegarde reçue de la production. Sans fichier, le script prend la plus récente
 # de backup/data, ce qui donne une ligne de cron qui n'a rien à savoir des noms :
 #
-#     0 * * * * /chemin/backup/restoreDb.sh --yes >> /var/log/restoreDb.log 2>&1
+#     0 * * * * /chemin/backup/restoreDb.sh --yes
 #
 # « La plus récente » se juge sur l'horodatage porté par le NOM, pas sur la date de
 # modification : un transfert par scp sans -p réécrit les mtimes et l'ordre réel
@@ -26,14 +26,14 @@
 # repère est gardé dans backup/data/.derniere-restauration.
 #
 # C'est le script le plus dangereux du dépôt : il ÉCRASE la base désignée par
-# backup/.env. Il est donc bâti pour rendre l'accident difficile :
+# backup/.env, et l'opération est IRRÉVERSIBLE — il ne lance pas backupDb.sh et ne
+# conserve rien de l'état précédent. Il est donc bâti pour rendre l'accident
+# difficile :
 #
 #   * il montre la cible et l'état actuel de la base AVANT de toucher à quoi que
 #     ce soit, et demande de saisir le nom de la base pour confirmer ;
 #   * il vérifie la sauvegarde avant de commencer — une restauration interrompue
 #     par un fichier tronqué laisserait la base à moitié écrasée ;
-#   * il prend une sauvegarde de l'état actuel avant d'écraser, pour qu'un
-#     retour arrière reste possible ;
 #   * il partage le verrou de backupDb.sh, ce qui empêche une sauvegarde
 #     automatique de photographier la base en cours de restauration.
 #
@@ -82,8 +82,10 @@ journal() {
 
 # Affiche ET journalise. Deux variantes, pour que le journal distingue ce qui a été
 # dit à l'opérateur de ce qui a été signalé comme une anomalie.
+#
+# Pas d'équivalent d'`avertir()` (AVIS) ici, contrairement à backupDb.sh : ce script
+# n'a aucun cas à mi-chemin. Tout ce qu'il refuse, il le refuse en sortant en erreur.
 dire()    { echo "$*"; journal "$*"; }
-avertir() { echo "$*" >&2; journal "AVIS $*"; }
 alerter() { echo "$*" >&2; journal "ERREUR $*"; }
 
 # Le code de sortie est journalisé quoi qu'il arrive — y compris sur une sortie que
@@ -183,8 +185,9 @@ horodatage() {
 }
 
 # La plus récente des sauvegardes de $BACKUP_DIR, ou rien. Le motif n'est pas
-# récursif : le sous-répertoire avant-restauration/ est donc exclu d'office, et
-# c'est heureux — choisir un filet de restauration précédent n'aurait aucun sens.
+# récursif, ce qui écarte d'office un éventuel sous-répertoire avant-restauration/
+# laissé par les versions précédentes de ce script : ces dumps-là ne sont pas des
+# sauvegardes de la production et n'ont rien à faire dans le choix.
 # Les fichiers .INCOMPLET ne correspondent pas au motif *.sql.gz non plus.
 plus_recente() {
   local f meilleure="" ts meilleur_ts=""
@@ -385,19 +388,24 @@ if [ -z "$ETAT" ]; then
   exit 1
 fi
 
-# Le filet sera-t-il possible ? La réponse doit figurer dans l'encadré, AVANT la
-# confirmation : sans backupDb.sh, la restauration est irréversible, et l'apprendre
-# après avoir confirmé ne sert à rien.
-AVANT_DIR="$BACKUP_DIR/avant-restauration"
-if [ "$ETAT" -eq 0 ]; then
-  FILET="sans objet — la base cible est vide"
-elif [ -x "$SCRIPT_DIR/backupDb.sh" ]; then
-  FILET="oui, dans backup/data/avant-restauration/"
-else
-  FILET="NON (backupDb.sh absent) — OPÉRATION IRRÉVERSIBLE"
-fi
-
-journal "cible : $MYSQL_DATABASE sur $MYSQL_HOST:$MYSQL_PORT, $ETAT table(s) actuellement — filet : $FILET"
+# ── Ce script NE LANCE PAS backupDb.sh ────────────────────────────────────────
+#
+# Il l'a fait, pour prendre un filet de sécurité avant d'écraser. C'est retiré, et
+# la restauration est donc IRRÉVERSIBLE.
+#
+# Deux raisons. D'abord on ne sauvegarde pas la base de secours : son contenu vient
+# des dumps de la production, il est reconstituable.
+#
+# Ensuite, ce filet ne protégeait pas ce qu'il prétendait protéger. backupDb.sh
+# résout ses PROPRES identifiants (BACKUP_MYSQL_*) en re-lisant le .env — les lui
+# passer par l'environnement est inopérant, son `set -a; source .env` les réaffecte
+# par-dessus. Sur la machine de secours il visait donc la PRODUCTION : le filet
+# allait chercher un dump neuf de la production, le déposait dans
+# avant-restauration/, et le script annonçait « état précédent conservé » puisque son
+# contrôle comptait les fichiers et qu'il y en avait bien un de plus. Mesuré.
+#
+# L'encadré ci-dessous le dit AVANT la confirmation : on ne l'apprend pas après.
+journal "cible : $MYSQL_DATABASE sur $MYSQL_HOST:$MYSQL_PORT, $ETAT table(s) actuellement — sans sauvegarde préalable"
 
 cat <<INFO
 
@@ -408,9 +416,8 @@ cat <<INFO
   │  CIBLE      : $MYSQL_DATABASE sur $MYSQL_HOST:$MYSQL_PORT
   │               contient actuellement $ETAT table(s)
   │
-  │  Filet      : $FILET
-  │
   │  Les tables présentes dans la sauvegarde seront ÉCRASÉES.
+  │  Aucune sauvegarde préalable n'est prise : c'est IRRÉVERSIBLE.
   └────────────────────────────────────────────────────────────
 INFO
 
@@ -427,36 +434,6 @@ if [ "$FORCE" != "--yes" ]; then
   fi
 fi
 
-# ── Filet : sauvegarde de l'état actuel avant d'écraser ───────────────────────
-#
-# C'est ce qui rend l'opération réversible. Sautée si la base est vide (rien à
-# préserver) ou si backupDb.sh est absent.
-#
-# Elle est prise AVANT que ce script ne pose le verrou : backupDb.sh prend et
-# relâche le sien lui-même, et il s'arrête — en sortant en 0, puisque c'est sa
-# protection normale — si le verrou est déjà tenu. Le lui laisser aurait donc
-# produit un « succès » sans fichier, et un filet de sécurité inexistant. Erreur
-# effectivement commise puis trouvée en mesurant.
-if [ "$ETAT" -gt 0 ] && [ -x "$SCRIPT_DIR/backupDb.sh" ]; then
-  echo
-  dire "Sauvegarde de l'état actuel avant écrasement…"
-  NB_AVANT=$(ls -1 "$AVANT_DIR"/*.sql.gz 2>/dev/null | wc -l)
-  "$SCRIPT_DIR/backupDb.sh" "$AVANT_DIR" || true
-  NB_APRES=$(ls -1 "$AVANT_DIR"/*.sql.gz 2>/dev/null | wc -l)
-  # On vérifie le FICHIER produit, pas le code de retour : backupDb.sh sort en 0
-  # quand il renonce faute de verrou libre.
-  if [ "$NB_APRES" -gt "$NB_AVANT" ]; then
-    dire "  état précédent conservé dans $AVANT_DIR/"
-  elif [ "$FORCE" = "--yes" ]; then
-    avertir "restoreDb : la sauvegarde préalable n'a rien produit — on continue (--yes)."
-  else
-    alerter "restoreDb : la sauvegarde préalable n'a produit aucun fichier, restauration abandonnée."
-    echo "  Restauration ABANDONNÉE : sans elle, l'opération serait irréversible." >&2
-    echo "  Relancer avec --yes pour l'accepter malgré tout." >&2
-    exit 1
-  fi
-fi
-
 # ── Verrou, partagé avec backupDb.sh ──────────────────────────────────────────
 #
 # Le même fichier de verrou que la sauvegarde : les deux opérations deviennent
@@ -464,7 +441,8 @@ fi
 # la base au milieu de la restauration et archiver un état incohérent — une
 # mauvaise sauvegarde qui aurait l'air d'une bonne.
 #
-# Posé ici, après la sauvegarde préalable, pour ne pas se bloquer soi-même.
+# Posé ici, après la confirmation, et non en tête de script : le tenir pendant qu'un
+# opérateur lit l'encadré et réfléchit bloquerait le cron de sauvegarde pour rien.
 LOCK="${TMPDIR:-/tmp}/backupDb-$(id -u).lock"
 exec 9>"$LOCK" || { echo "restoreDb : verrou inaccessible ($LOCK)." >&2; exit 1; }
 if command -v flock >/dev/null; then
@@ -479,7 +457,7 @@ echo
 dire "Restauration en cours…"
 if ! gzip -cd "$DUMP" | mysql --defaults-extra-file="$CNF"; then
   alerter "restoreDb : ÉCHEC pendant la restauration de $MYSQL_DATABASE — base probablement dans un état intermédiaire."
-  echo "  état intermédiaire. L'état précédent est dans $BACKUP_DIR/avant-restauration/" >&2
+  echo "  Reprendre avec une sauvegarde saine — rien n'a été conservé de l'état précédent." >&2
   exit 1
 fi
 
