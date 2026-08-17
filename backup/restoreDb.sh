@@ -37,11 +37,71 @@
 #   * il partage le verrou de backupDb.sh, ce qui empêche une sauvegarde
 #     automatique de photographier la base en cours de restauration.
 #
+# Chaque exécution laisse une trace horodatée dans backup/logs/restoreDb-AAAA-MM.log
+# (un fichier par mois, jamais effacé) : ce qui a été retenu, sur quelle base, ce
+# qui a été refusé et pourquoi, et le code de sortie.
+#
 # Identifiants lus dans backup/.env, à côté de ce script. Voir backup/.env.example.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKUP_DIR="$SCRIPT_DIR/data"
+
+# ── Journal ───────────────────────────────────────────────────────────────────
+#
+# Un fichier par mois, jamais effacé (règle du projet : ces scripts ne suppriment
+# rien). Une exécution qui ne fait rien tient en deux lignes, le volume reste donc
+# négligeable même avec un cron horaire.
+#
+# Le journal est alimenté par `journal()`, en parallèle de l'affichage, et NON en
+# faisant passer la sortie du script dans un `tee` : stdout deviendrait un tuyau,
+# et l'invite « saisir le nom de la base » — le garde-fou principal — s'afficherait
+# avec du retard, voire après la lecture. On ne dégrade pas une protection pour
+# obtenir un journal.
+LOG_DIR="$SCRIPT_DIR/logs"
+LOG=""
+if mkdir -p "$LOG_DIR" 2>/dev/null; then
+  LOG="$LOG_DIR/restoreDb-$(date '+%Y-%m').log"
+  # Journal illisible (droits, disque plein) : on continue sans, la restauration
+  # importe plus que sa trace. Signalé une fois, pas à chaque ligne.
+  if ! touch "$LOG" 2>/dev/null; then
+    echo "restoreDb : journal inaccessible ($LOG), exécution sans trace." >&2
+    LOG=""
+  fi
+else
+  echo "restoreDb : impossible de créer $LOG_DIR, exécution sans trace." >&2
+fi
+
+# Le PID figure dans chaque ligne : le verrou n'est posé que tard dans le script,
+# deux exécutions peuvent donc se trouver ensemble dans la phase de vérification et
+# entrelacer leurs lignes.
+journal() {
+  [ -n "$LOG" ] || return 0
+  printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$$" "$*" >> "$LOG"
+}
+
+# Affiche ET journalise. Deux variantes, pour que le journal distingue ce qui a été
+# dit à l'opérateur de ce qui a été signalé comme une anomalie.
+dire()    { echo "$*"; journal "$*"; }
+alerter() { echo "$*" >&2; journal "ERREUR $*"; }
+
+# Le code de sortie est journalisé quoi qu'il arrive — y compris sur une sortie que
+# le script n'a pas prévue, une interruption au clavier par exemple. Sans cela, le
+# journal d'une exécution avortée s'arrêterait sans dire qu'elle s'est arrêtée, ce
+# qui se lit comme un script encore en cours.
+#
+# Le nettoyage du fichier d'options est fait ICI, et non par un second trap EXIT :
+# un shell n'en a qu'un, et un `trap 'rm -f "$CNF"; _fin' EXIT` aurait fait lire à
+# _fin le code de retour du `rm` — toujours 0 — au lieu de celui du script.
+_fin() {
+  local code=$?
+  [ -n "${CNF:-}" ] && rm -f "$CNF"
+  journal "fin, code $code"
+  return $code
+}
+trap _fin EXIT
+
+journal "--- lancement : ${*:-(sans argument)}"
 # Les arguments sont analysés sans ordre imposé : en automatique, on écrit
 # volontiers `--yes` avant le fichier.
 DUMP=""
@@ -90,10 +150,18 @@ MYSQL_USER="${RESTORE_MYSQL_USER:-${MYSQL_USER:-}}"
 MYSQL_PASSWORD="${RESTORE_MYSQL_PASSWORD:-${MYSQL_PASSWORD:-}}"
 MYSQL_DATABASE="${RESTORE_MYSQL_DATABASE:-${MYSQL_DATABASE:-}}"
 
-: "${MYSQL_HOST:?MYSQL_HOST manquant — renseigner RESTORE_MYSQL_HOST ou MYSQL_HOST dans backup/.env}"
-: "${MYSQL_USER:?MYSQL_USER manquant — renseigner RESTORE_MYSQL_USER ou MYSQL_USER dans backup/.env}"
-: "${MYSQL_PASSWORD:?MYSQL_PASSWORD manquant — renseigner RESTORE_MYSQL_PASSWORD ou MYSQL_PASSWORD dans backup/.env}"
-: "${MYSQL_DATABASE:?MYSQL_DATABASE manquant — renseigner RESTORE_MYSQL_DATABASE ou MYSQL_DATABASE dans backup/.env}"
+MANQUANTES=""
+for v in HOST USER PASSWORD DATABASE; do
+  eval "valeur=\${MYSQL_$v:-}"
+  [ -n "$valeur" ] || MANQUANTES="$MANQUANTES MYSQL_$v"
+done
+if [ -n "$MANQUANTES" ]; then
+  alerter "restoreDb : configuration incomplète, manque —$MANQUANTES"
+  for v in $MANQUANTES; do
+    echo "  renseigner RESTORE_$v (ou $v) dans backup/.env" >&2
+  done
+  exit 1
+fi
 
 command -v mysql >/dev/null || { echo "restoreDb : client mysql introuvable." >&2; exit 1; }
 command -v gzip >/dev/null || { echo "restoreDb : gzip introuvable." >&2; exit 1; }
@@ -180,7 +248,7 @@ fi
 if [ -z "$DUMP" ]; then
   DUMP="$(plus_recente)"
   if [ -z "$DUMP" ]; then
-    echo "restoreDb : aucune sauvegarde exploitable dans $BACKUP_DIR." >&2
+    alerter "restoreDb : aucune sauvegarde exploitable dans $BACKUP_DIR."
     # Des .INCOMPLET et rien d'autre, c'est le symptôme d'un transfert coupé ou
     # d'une sauvegarde interrompue, pas d'un répertoire vide. Le dire évite de
     # chercher longtemps pourquoi « il n'y a rien » alors que des fichiers sont là.
@@ -192,14 +260,14 @@ if [ -z "$DUMP" ]; then
     fi
     exit 1
   fi
-  echo "restoreDb : plus récente sauvegarde retenue — $(basename "$DUMP")"
+  dire "restoreDb : plus récente sauvegarde retenue — $(basename "$DUMP")"
 fi
 
 
-[ -f "$DUMP" ] || { echo "restoreDb : fichier introuvable — $DUMP" >&2; exit 1; }
+[ -f "$DUMP" ] || { alerter "restoreDb : fichier introuvable — $DUMP"; exit 1; }
 case "$DUMP" in
   *.INCOMPLET)
-    echo "restoreDb : ce fichier a été marqué INCOMPLET par backupDb.sh, il n'est pas restaurable." >&2
+    alerter "restoreDb : $(basename "$DUMP") marqué INCOMPLET par backupDb.sh, non restaurable."
     exit 1
     ;;
 esac
@@ -208,7 +276,7 @@ esac
 #
 # Une restauration qui s'interrompt en cours de route laisse la base à moitié
 # écrasée : il vaut mieux découvrir maintenant qu'un fichier est abîmé.
-echo "Vérification de $DUMP…"
+dire "Vérification de $DUMP…"
 
 # Fichier encore en cours d'écriture ? En automatique, le cron peut se déclencher
 # pendant que rsync ou scp dépose encore la sauvegarde. La taille est relevée deux
@@ -219,20 +287,20 @@ T1=$(stat -c %s "$DUMP" 2>/dev/null || echo 0)
 sleep 2
 T2=$(stat -c %s "$DUMP" 2>/dev/null || echo 0)
 if [ "$T1" != "$T2" ]; then
-  echo "restoreDb : le fichier grossit encore ($T1 → $T2 octets) — transfert en cours." >&2
+  alerter "restoreDb : le fichier grossit encore ($T1 → $T2 octets) — transfert en cours."
   echo "  Reprendre quand la copie sera terminée." >&2
   exit 1
 fi
 if [ "$T2" -eq 0 ]; then
-  echo "restoreDb : fichier vide." >&2
+  alerter "restoreDb : fichier vide."
   exit 1
 fi
 
 # Intégrité de l'archive, puis marqueur de fin de mysqldump : les deux ensemble
 # attestent que le dump est allé jusqu'au bout.
-gzip -t "$DUMP" 2>/dev/null || { echo "restoreDb : archive gzip corrompue ou incomplète." >&2; exit 1; }
+gzip -t "$DUMP" 2>/dev/null || { alerter "restoreDb : archive gzip corrompue ou incomplète."; exit 1; }
 gzip -cd "$DUMP" | tail -5 | grep -q "Dump completed" \
-  || { echo "restoreDb : marqueur de fin absent, sauvegarde tronquée." >&2; exit 1; }
+  || { alerter "restoreDb : marqueur de fin absent, sauvegarde tronquée."; exit 1; }
 
 # ── Garde-fou d'antériorité ───────────────────────────────────────────────────
 #
@@ -255,7 +323,7 @@ if [ -f "$ETAT_FILE" ]; then
   DERNIER_NOM="$(cut -d' ' -f3- "$ETAT_FILE" 2>/dev/null)"
   if [ -n "${DERNIER_TS:-}" ]; then
     if [ "$DUMP_TS" -lt "$DERNIER_TS" ] 2>/dev/null; then
-      echo "restoreDb : REFUS — cette sauvegarde est plus ancienne que la dernière restaurée." >&2
+      alerter "restoreDb : REFUS — $(basename "$DUMP") ($DUMP_TS) est plus ancienne que la dernière restaurée, ${DERNIER_NOM:-?} ($DERNIER_TS)."
       echo "  proposée : $(basename "$DUMP")  ($DUMP_TS)" >&2
       echo "  dernière : ${DERNIER_NOM:-?}  ($DERNIER_TS)" >&2
       echo "  Restaurer reviendrait à faire remonter la base dans le temps." >&2
@@ -264,7 +332,7 @@ if [ -f "$ETAT_FILE" ]; then
     if [ "$DUMP_TS" = "$DERNIER_TS" ] 2>/dev/null; then
       # Même sauvegarde qu'au passage précédent : rien de neuf, ce n'est pas une
       # anomalie. Sortie en 0 pour ne pas alerter cron à chaque tour.
-      echo "restoreDb : $(basename "$DUMP") a déjà été restaurée, rien à faire."
+      dire "restoreDb : $(basename "$DUMP") a déjà été restaurée, rien à faire."
       exit 0
     fi
   fi
@@ -278,28 +346,28 @@ DUMP_DB="$(gzip -cd "$DUMP" | grep -m1 -oE 'CREATE DATABASE[^`]*`[^`]+`' | grep 
 # proprement avec moins de tables. On refuse donc qu'une restauration en apporte
 # moins que la précédente.
 if [ "$DUMP_TABLES" -eq 0 ]; then
-  echo "restoreDb : aucune table dans cette sauvegarde — rien à restaurer." >&2
+  alerter "restoreDb : aucune table dans cette sauvegarde — rien à restaurer."
   exit 1
 fi
 if [ -n "${DERNIER_TABLES:-}" ] && [ "$DUMP_TABLES" -lt "$DERNIER_TABLES" ] 2>/dev/null; then
   if [ "$ALLOW_SHRINK" != "1" ]; then
-    echo "restoreDb : REFUS — cette sauvegarde contient MOINS de tables que la dernière restaurée." >&2
+    alerter "restoreDb : REFUS — $DUMP_TABLES tables contre $DERNIER_TABLES à la dernière restauration (${DERNIER_NOM:-?})."
     echo "  proposée : $DUMP_TABLES tables" >&2
     echo "  dernière : $DERNIER_TABLES tables (${DERNIER_NOM:-?})" >&2
     echo "  Signe d'une sauvegarde partielle. Si la diminution est voulue" >&2
     echo "  (tables réellement supprimées), relancer avec --allow-shrink." >&2
     exit 1
   fi
-  echo "  note : $DUMP_TABLES tables contre $DERNIER_TABLES précédemment (--allow-shrink)"
+  dire "  note : $DUMP_TABLES tables contre $DERNIER_TABLES précédemment (--allow-shrink)"
 fi
 
-echo "  archive saine et terminée, $DUMP_TABLES tables, base d'origine : ${DUMP_DB:-inconnue}"
+dire "  archive saine et terminée, $DUMP_TABLES tables, base d'origine : ${DUMP_DB:-inconnue}"
 
 # Le mot de passe passe par un fichier d'options temporaire, jamais par la ligne
 # de commande : un `-p...` est visible de tous dans `ps`.
 CNF="$(mktemp)" || exit 1
 chmod 600 "$CNF"
-trap 'rm -f "$CNF"' EXIT
+# Sa suppression est assurée par _fin (trap EXIT posé en tête de script).
 cat > "$CNF" <<EOF
 [client]
 host=$MYSQL_HOST
@@ -312,7 +380,7 @@ EOF
 ETAT="$(mysql --defaults-extra-file="$CNF" -N -B -e \
   "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$MYSQL_DATABASE'" 2>/dev/null)"
 if [ -z "$ETAT" ]; then
-  echo "restoreDb : impossible d'interroger $MYSQL_DATABASE sur $MYSQL_HOST." >&2
+  alerter "restoreDb : impossible d'interroger $MYSQL_DATABASE sur $MYSQL_HOST."
   exit 1
 fi
 
@@ -327,6 +395,8 @@ elif [ -x "$SCRIPT_DIR/backupDb.sh" ]; then
 else
   FILET="NON (backupDb.sh absent) — OPÉRATION IRRÉVERSIBLE"
 fi
+
+journal "cible : $MYSQL_DATABASE sur $MYSQL_HOST:$MYSQL_PORT, $ETAT table(s) actuellement — filet : $FILET"
 
 cat <<INFO
 
@@ -351,7 +421,7 @@ if [ "$FORCE" != "--yes" ]; then
   printf 'Pour confirmer, saisir le nom de la base cible (%s) : ' "$MYSQL_DATABASE"
   read -r REPONSE
   if [ "$REPONSE" != "$MYSQL_DATABASE" ]; then
-    echo "restoreDb : annulé (saisie « $REPONSE »)."
+    dire "restoreDb : annulé (saisie « $REPONSE »)."
     exit 1
   fi
 fi
@@ -368,18 +438,18 @@ fi
 # effectivement commise puis trouvée en mesurant.
 if [ "$ETAT" -gt 0 ] && [ -x "$SCRIPT_DIR/backupDb.sh" ]; then
   echo
-  echo "Sauvegarde de l'état actuel avant écrasement…"
+  dire "Sauvegarde de l'état actuel avant écrasement…"
   NB_AVANT=$(ls -1 "$AVANT_DIR"/*.sql.gz 2>/dev/null | wc -l)
   "$SCRIPT_DIR/backupDb.sh" "$AVANT_DIR" || true
   NB_APRES=$(ls -1 "$AVANT_DIR"/*.sql.gz 2>/dev/null | wc -l)
   # On vérifie le FICHIER produit, pas le code de retour : backupDb.sh sort en 0
   # quand il renonce faute de verrou libre.
   if [ "$NB_APRES" -gt "$NB_AVANT" ]; then
-    echo "  état précédent conservé dans $AVANT_DIR/"
+    dire "  état précédent conservé dans $AVANT_DIR/"
   elif [ "$FORCE" = "--yes" ]; then
-    echo "restoreDb : la sauvegarde préalable n'a rien produit — on continue (--yes)." >&2
+    alerter "restoreDb : la sauvegarde préalable n'a rien produit — on continue (--yes)."
   else
-    echo "restoreDb : la sauvegarde préalable n'a produit aucun fichier." >&2
+    alerter "restoreDb : la sauvegarde préalable n'a produit aucun fichier, restauration abandonnée."
     echo "  Restauration ABANDONNÉE : sans elle, l'opération serait irréversible." >&2
     echo "  Relancer avec --yes pour l'accepter malgré tout." >&2
     exit 1
@@ -398,16 +468,16 @@ LOCK="${TMPDIR:-/tmp}/backupDb-$(id -u).lock"
 exec 9>"$LOCK" || { echo "restoreDb : verrou inaccessible ($LOCK)." >&2; exit 1; }
 if command -v flock >/dev/null; then
   flock -n 9 || {
-    echo "restoreDb : une sauvegarde est en cours, abandon avant d'écraser." >&2
+    alerter "restoreDb : une sauvegarde est en cours, abandon avant d'écraser."
     exit 1
   }
 fi
 
 # ── Restauration ──────────────────────────────────────────────────────────────
 echo
-echo "Restauration en cours…"
+dire "Restauration en cours…"
 if ! gzip -cd "$DUMP" | mysql --defaults-extra-file="$CNF"; then
-  echo "restoreDb : ÉCHEC pendant la restauration. La base est probablement dans un" >&2
+  alerter "restoreDb : ÉCHEC pendant la restauration de $MYSQL_DATABASE — base probablement dans un état intermédiaire."
   echo "  état intermédiaire. L'état précédent est dans $BACKUP_DIR/avant-restauration/" >&2
   exit 1
 fi
@@ -418,10 +488,10 @@ echo "$DUMP_TS $DUMP_TABLES $(basename "$DUMP")" > "$ETAT_FILE"
 
 APRES="$(mysql --defaults-extra-file="$CNF" -N -B -e \
   "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '$MYSQL_DATABASE'" 2>/dev/null)"
-echo "restoreDb : terminé — $MYSQL_DATABASE contient $APRES table(s) (sauvegarde : $DUMP_TABLES)."
+dire "restoreDb : terminé — $MYSQL_DATABASE contient $APRES table(s) (sauvegarde : $DUMP_TABLES)."
 
 if [ "${APRES:-0}" -lt "$DUMP_TABLES" ]; then
-  echo "restoreDb : ATTENTION, moins de tables que dans la sauvegarde. À vérifier." >&2
+  alerter "restoreDb : ATTENTION, moins de tables ($APRES) que dans la sauvegarde ($DUMP_TABLES). À vérifier."
   exit 1
 fi
 if [ "${APRES:-0}" -gt "$DUMP_TABLES" ]; then

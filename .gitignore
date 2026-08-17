@@ -54,6 +54,12 @@ productivite/
 # .gitkeep explicitement excepté : les scripts s'attendent à le trouver.
 backup/data/*
 !backup/data/.gitkeep
+
+# Journaux de restoreDb.sh, même traitement. Ils nomment la base et l'hôte, et
+# décrivent l'état de l'installation du client : rien à faire dans un dépôt public.
+backup/logs/*
+!backup/logs/.gitkeep
+
 backups/
 *.sql.gz
 *.sql.bz2
