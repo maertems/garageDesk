@@ -109,11 +109,14 @@ def draw_logo(c: canvas.Canvas, logo: bytes | None, right_x: float, center_y: fl
     laisse 37 × 12 mm utiles : un logo carré occupe donc 12 × 12 mm, un logo au
     format 300 × 80 occupe 37 × 9,9 mm (valeurs mesurées).
 
-    Taille de fichier conseillée à l'utilisateur (écran de réglage) : 440 × 140 px
-    pour un logo allongé, soit 300 dpi sur les 37 × 12 mm utiles. Le dpi inscrit
-    dans le fichier est sans effet ici — seul le nombre de pixels compte, puisque
-    l'image est redimensionnée au cadre. Ces valeurs et celles de
-    CompanyLogoSection.tsx doivent rester d'accord.
+    Taille de fichier conseillée à l'utilisateur (écran de réglage) : 920 × 355 px
+    pour un logo allongé. Ce n'est PAS dicté par ce cadre-ci — 300 dpi sur les
+    37 × 12 mm utiles ne demanderaient que 440 × 140 px — mais par celui du contrat
+    de prêt, qui va jusqu'à 78 × 30 mm (`loan_contract_pdf.LOGO_W/LOGO_H`). C'est le
+    plus grand des deux usages qui commande, sinon le même fichier sortirait deux
+    fois trop grossier sur le contrat. Le dpi inscrit dans le fichier est sans effet
+    — seul le nombre de pixels compte, puisque l'image est redimensionnée au cadre.
+    Ces valeurs et celles de CompanyLogoSection.tsx doivent rester d'accord.
 
     Une plaque blanche est posée sous l'image : les bandeaux sont bleu foncé ou
     rouge, où un logo sombre ou opaque serait illisible. Elle donne le même rendu

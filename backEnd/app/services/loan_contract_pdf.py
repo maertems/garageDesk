@@ -89,9 +89,11 @@ LEAD = 4.6 * mm     # interligne du texte courant, relevé sur la référence
 # une. L'image garde ses proportions et se cale en haut à droite du cadre.
 #
 # Conséquence pour le fichier fourni dans les réglages : à cette emprise, 300 dpi
-# demandent environ 920 × 355 px. La consigne affichée dans CompanyLogoSection.tsx
-# est calculée pour le cadre de 37 × 12 mm des factures, elle est donc trop basse
-# pour cet usage — à revoir de concert.
+# demandent 920 × 355 px. C'est donc CE cadre qui fixe la consigne affichée dans
+# CompanyLogoSection.tsx, et non celui des factures qui ne réclamerait que
+# 440 × 140 px — un fichier calibré pour la facture sortirait deux fois trop
+# grossier ici. Les trois endroits doivent rester d'accord : ici,
+# billing_pdf.draw_logo et CompanyLogoSection.tsx.
 LOGO_W = 78 * mm
 LOGO_H = 30 * mm
 
