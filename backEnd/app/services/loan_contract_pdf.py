@@ -1,19 +1,43 @@
 """Contrat de prêt de véhicule — génération PDF (migration 025).
 
-Même socle que billing_pdf.py : reportlab pur Python, Helvetica (Latin-1 couvre
-le français), A4. Les helpers y sont réutilisés plutôt que recopiés.
+reportlab pur Python, Helvetica, A4. Seuls les helpers NEUTRES de billing_pdf.py
+sont réutilisés — `_wrap`, `_date`, `_s` — et non son habillage. `_State` non plus :
+son curseur saute la page sans retracer le cadre, et ses couleurs par défaut sont
+les gris des factures.
 
 API publique :
   generate_loan_contract_pdf(res, vehicle, client, company, damages, terms, logo) → bytes
 
-Le contrat tient sur une page. Sa partie basse est en deux colonnes séparées par
-un filet vertical — état de départ à gauche, état de restitution à droite — et
-chacune porte sa date, son kilométrage, sa jauge de carburant, un schéma du
-véhicule, un cadre d'observations, une date et une signature. Seul le schéma de
-départ reçoit les dégâts enregistrés en base, sous forme de points marqués de
-l'initiale de leur nature (R/E/B/M) ; celui de restitution est vierge, à annoter
-au stylo. Les conditions du prêt ferment le document : leur longueur est libre,
-c'est donc le seul élément susceptible de déborder sur un second feuillet.
+Habillage : imprimé administratif, calqué sur les factures que le garage édite
+déjà, pour que les deux papiers se rangent dans le même dossier client. Mesuré sur
+un exemplaire de référence :
+
+  * un cadre noir à 6,2 mm des quatre bords, règles sur 197,6 mm ;
+  * aucune couleur, aucun aplat — noir sur blanc, filets fins ;
+  * une seule police (Arimo sur la référence, clone métrique d'Arial, donc
+    Helvetica ici transpose les largeurs sans embarquer de fonte) ;
+  * un corps unique de 10 pt, 14 gras pour la raison sociale, 8 pt pour le menu ;
+  * des relevés en cellules réglées plutôt qu'en blocs colorés ;
+  * le logo en haut à droite, jusqu'à 78 × 30 mm, posé sur le blanc.
+
+Deux écarts assumés par rapport à la référence :
+
+  * les blocs d'identité gardent leurs libellés PRÊTEUR et EMPRUNTEUR. Sur une
+    facture l'émetteur se devine ; sur un contrat, savoir qui prête et qui emprunte
+    a une portée juridique ;
+  * le vitrage du schéma garde un aplat très clair. C'est le seul du document :
+    sans lui, les vitres latérales — qui n'ont pas la place de porter un libellé —
+    ne se distinguent plus des portières.
+
+Le contrat tient sur une page. Sa partie basse est en deux colonnes séparées par un
+filet vertical — état de départ à gauche, restitution à droite — et chacune porte
+sa date, son kilométrage, sa jauge de carburant, un schéma du véhicule, un cadre
+d'observations, une date et une signature. Le corps y descend à 8 et 7 pt : c'est
+le compromis qui garde le document sur un seul feuillet. Seul le schéma de départ
+reçoit les dégâts enregistrés en base, sous forme de points marqués de l'initiale
+de leur nature (R/E/B/M) ; celui de restitution est vierge, à annoter au stylo. Les
+conditions du prêt ferment le document : leur longueur est libre, c'est donc le
+seul élément susceptible de déborder sur un second feuillet.
 
 Limite assumée du schéma : une vue de dessus ne montre pas l'axe vertical d'un
 élément (le haut d'une portière n'est pas distinguable de son bas). La grille 3×3
@@ -24,26 +48,52 @@ import io
 
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
+from reportlab.lib.utils import ImageReader
 from reportlab.lib.units import mm
 from reportlab.lib import colors
 
 from app.services.billing_pdf import (
     PAGE_W,
     PAGE_H,
-    ML,
-    MR,
-    CW,
-    BLUE,
-    GRAY_BG,
-    GRAY_LINE,
-    GRAY_TXT,
-    GRAY_MUTED,
-    _State,
     _date,
     _s,
     _wrap,
-    draw_logo,
 )
+
+# ── Habillage : cadre, filets, corps ─────────────────────────────────────────
+# Valeurs relevées sur la facture de référence. Le cadre est à 6,2 mm des quatre
+# bords ; le texte respire de 3 mm à l'intérieur, sinon il colle au filet.
+FRAME = 6.2 * mm
+PAD = 3 * mm
+CL = FRAME + PAD                    # bord gauche du texte
+CR = PAGE_W - FRAME - PAD           # bord droit du texte
+CONTENT_W = CR - CL
+
+INK = colors.black                  # une seule encre : le document part sur une
+                                    # imprimante noir et blanc et se photocopie.
+FRAME_LW = 0.8
+RULE_LW = 0.5
+HAIR_LW = 0.3
+
+# Corps. La référence n'en emploie que trois ; les deux plus petits servent
+# uniquement à la partie départ/restitution, pour tenir sur une page.
+FS_NAME = 14        # raison sociale
+FS_BODY = 10        # texte courant, en-têtes de tableau
+FS_TERMS = 8        # conditions du prêt
+FS_FIELD = 8        # relevés des deux colonnes
+FS_LABEL = 7        # libellés des relevés
+LEAD = 4.6 * mm     # interligne du texte courant, relevé sur la référence
+
+# Logo : jusqu'à 78 × 30 mm en haut à droite, sans plaque ni cadre derrière —
+# contrairement aux factures de l'application, dont le bandeau sombre en impose
+# une. L'image garde ses proportions et se cale en haut à droite du cadre.
+#
+# Conséquence pour le fichier fourni dans les réglages : à cette emprise, 300 dpi
+# demandent environ 920 × 355 px. La consigne affichée dans CompanyLogoSection.tsx
+# est calculée pour le cadre de 37 × 12 mm des factures, elle est donc trop basse
+# pour cet usage — à revoir de concert.
+LOGO_W = 78 * mm
+LOGO_H = 30 * mm
 
 # ── Libellés français ─────────────────────────────────────────────────────────
 # Codes en anglais côté API, libellés français ici. Le miroir côté interface est
@@ -159,6 +209,8 @@ _ZONE_CAPTIONS = {
     "trunk": "Coffre",
 }
 
+# Aplat du vitrage — le seul du document. Voir l'écart assumé, en tête de module.
+GLASS = colors.HexColor("#EDEDED")
 
 
 def _km(v) -> str:
@@ -171,6 +223,58 @@ def _km(v) -> str:
     except (TypeError, ValueError):
         return ""
 
+
+def _draw_frame(c: canvas.Canvas) -> float:
+    """Trace le cadre de la page et retourne le y du premier texte.
+
+    Appelée pour chaque page, y compris la seconde qu'un texte de conditions
+    volumineux peut provoquer : un feuillet sans cadre ne ressemblerait plus à
+    l'imprimé, et c'est le cadre qui fait l'unité avec les factures du garage.
+    """
+    c.setStrokeColor(INK)
+    c.setLineWidth(FRAME_LW)
+    c.rect(FRAME, FRAME, PAGE_W - 2 * FRAME, PAGE_H - 2 * FRAME, fill=0, stroke=1)
+    return PAGE_H - FRAME - PAD
+
+
+def _rule(c: canvas.Canvas, y: float, x0: float = FRAME, x1: float | None = None,
+          lw: float = RULE_LW) -> None:
+    """Règle horizontale. Par défaut, toute la largeur du cadre — c'est ainsi que
+    la référence sépare ses blocs, d'un filet qui touche les deux bords."""
+    c.setStrokeColor(INK)
+    c.setLineWidth(lw)
+    c.line(x0, y, PAGE_W - FRAME if x1 is None else x1, y)
+
+
+def _draw_logo_plain(c: canvas.Canvas, logo: bytes | None, right_x: float, top_y: float) -> float:
+    """Logo posé sur le blanc, sans plaque ni cadre. Retourne la hauteur occupée.
+
+    Variante propre au contrat : `draw_logo` de billing_pdf pose une plaque blanche
+    sous l'image, indispensable sur le bandeau sombre d'une facture, parasite ici où
+    le fond est déjà blanc. L'emprise est aussi bien plus large (78 × 30 mm contre
+    40 × 15), à l'image de la référence.
+
+    L'image garde ses proportions et se cale en HAUT à droite : un logo allongé
+    occupe alors toute la largeur disponible, un logo carré reste haut de 30 mm.
+
+    Ne dessine rien et ne consomme aucune hauteur si `logo` est None.
+    """
+    if not logo:
+        return 0.0
+    try:
+        img = ImageReader(io.BytesIO(logo))
+        iw, ih = img.getSize()
+    except Exception:
+        # Fichier illisible malgré le contrôle à l'upload : le contrat sort sans
+        # logo plutôt que de ne pas sortir du tout.
+        return 0.0
+    if not iw or not ih:
+        return 0.0
+
+    scale = min(LOGO_W / iw, LOGO_H / ih)
+    w, h = iw * scale, ih * scale
+    c.drawImage(img, right_x - w, top_y - h, width=w, height=h, mask="auto")
+    return h
 
 
 def _draw_car(
@@ -195,18 +299,19 @@ def _draw_car(
         # Repère voiture : y croît vers l'arrière ; page : y croît vers le haut.
         return y_top - cy * scale
 
-    # Zones : fond très clair, filets fins. Le vitrage se distingue par un fond
-    # légèrement plus soutenu, sinon la lecture du schéma est confuse.
-    c.setLineWidth(0.3)
+    # Zones : blanches et cernées d'un filet fin. Le vitrage seul reçoit un aplat
+    # très clair, sans quoi les vitres latérales ne se distinguent plus des
+    # portières — elles n'ont pas la place de porter un libellé.
+    c.setLineWidth(HAIR_LW)
     for code, (zx, zy, zw, zh) in ZONES.items():
         is_glass = code.startswith("window") or code in ("windshield", "rearWindow")
-        c.setFillColor(colors.HexColor("#E8EDF2") if is_glass else colors.white)
-        c.setStrokeColor(GRAY_LINE)
+        c.setFillColor(GLASS if is_glass else colors.white)
+        c.setStrokeColor(INK)
         c.rect(px(zx), py(zy + zh), zw * scale, zh * scale, fill=1, stroke=1)
 
     # Étiquettes des éléments centraux
     c.setFont("Helvetica", 5.5)
-    c.setFillColor(GRAY_MUTED)
+    c.setFillColor(INK)
     for code, caption in _ZONE_CAPTIONS.items():
         zx, zy, zw, _zh = ZONES[code]
         # En haut de la zone, pas en son centre : un dégât en case « milieu milieu »
@@ -214,16 +319,17 @@ def _draw_car(
         c.drawCentredString(px(zx + zw / 2), py(zy + 7), caption)
 
     # Contour de la caisse par-dessus le pavage
-    c.setStrokeColor(BLUE)
-    c.setLineWidth(1.1)
+    c.setStrokeColor(INK)
+    c.setLineWidth(1.0)
     c.roundRect(px(2), py(238), 96 * scale, 236 * scale, 6 * scale, fill=0, stroke=1)
 
     # Roues, purement décoratives (aucune zone cliquable, aucun dégât ne s'y pose) :
     # sans elles le pavage se lit comme une grille de rectangles et non comme une
-    # voiture. À cheval sur le bord de caisse, aux quatre positions d'essieu.
-    c.setFillColor(colors.HexColor("#4B5563"))
-    c.setStrokeColor(colors.HexColor("#374151"))
-    c.setLineWidth(0.3)
+    # voiture. À cheval sur le bord de caisse, aux quatre positions d'essieu. Pleines
+    # et noires : sur un tirage en noir et blanc, c'est ce qui se lit comme un pneu.
+    c.setFillColor(INK)
+    c.setStrokeColor(INK)
+    c.setLineWidth(HAIR_LW)
     for wx in WHEELS_X:
         for wy in WHEELS_Y:
             c.roundRect(
@@ -233,8 +339,9 @@ def _draw_car(
 
     # Repère « AVANT »
     c.setFont("Helvetica-Bold", 6.5)
-    c.setFillColor(BLUE)
+    c.setFillColor(INK)
     c.drawCentredString(px(50), y_top + 2.2 * mm, "AVANT")
+    c.setStrokeColor(INK)
     c.setLineWidth(0.7)
     c.line(px(50), y_top + 1.8 * mm, px(50), y_top + 0.4 * mm)
     c.line(px(50), y_top + 1.9 * mm, px(48.5), y_top + 1.0 * mm)
@@ -290,7 +397,9 @@ def _draw_car(
             # Zone plus étroite que le marqueur : on centre, faute de mieux.
             mx = (px(zx) + px(zx + zw)) / 2 if x_max < x_min else min(max(mx, x_min), x_max)
             my = (py(zy) + py(zy + zh)) / 2 if y_max < y_min else min(max(my, y_min), y_max)
-            c.setFillColor(colors.HexColor("#C2410C"))
+            # Pastille noire, lettre en réserve : la seule façon de rester lisible
+            # sur un document sans couleur.
+            c.setFillColor(INK)
             c.setStrokeColor(colors.white)
             c.setLineWidth(0.6)
             c.circle(mx, my, radius, fill=1, stroke=1)
@@ -325,34 +434,35 @@ def _fuel_gauge(c: canvas.Canvas, x: float, y_top: float, width: float, level) -
     except (TypeError, ValueError):
         lvl = 0
 
-    # Cadre général
+    # Cadre général. Angles droits et non arrondis : la référence ne connaît que
+    # l'angle droit, tous ses cadres sont des cellules.
     c.setFillColor(colors.white)
-    c.setStrokeColor(GRAY_LINE)
-    c.setLineWidth(0.4)
-    c.roundRect(x, y, width, h, 0.5 * mm, fill=1, stroke=1)
+    c.setStrokeColor(INK)
+    c.setLineWidth(RULE_LW)
+    c.rect(x, y, width, h, fill=1, stroke=1)
 
     cx = x
     tick_centers: list[float] = []
     for group in (0, 1):
         # Repère sombre (E, puis ½, puis F après la seconde série)
-        c.setFillColor(GRAY_TXT)
+        c.setFillColor(INK)
         c.rect(cx, y, tick_w, h, fill=1, stroke=0)
         tick_centers.append(cx + tick_w / 2)
         cx += tick_w
         for i in range(1, 5):
             seg = group * 4 + i
-            c.setFillColor(BLUE if seg <= lvl else colors.white)
-            c.setStrokeColor(GRAY_LINE)
-            c.setLineWidth(0.3)
+            c.setFillColor(INK if seg <= lvl else colors.white)
+            c.setStrokeColor(INK)
+            c.setLineWidth(HAIR_LW)
             c.rect(cx, y, seg_w, h, fill=1, stroke=1)
             cx += seg_w
-    c.setFillColor(GRAY_TXT)
+    c.setFillColor(INK)
     c.rect(cx, y, tick_w, h, fill=1, stroke=0)
     tick_centers.append(cx + tick_w / 2)
 
     # Libellés sous les trois repères
     c.setFont("Helvetica-Bold", 5)
-    c.setFillColor(GRAY_MUTED)
+    c.setFillColor(INK)
     for center, label in zip(tick_centers, ("E", "½", "F")):
         c.drawCentredString(center, y - 3 * mm, label)
 
@@ -365,8 +475,8 @@ def _wrap_hard(c: canvas.Canvas, text: str, font: str, size: float, max_w: float
     _wrap (billing_pdf) ne découpe que sur les espaces : un mot trop long est écrit
     tel quel et sort de la marge. Une observation de dégât ou une clause peut
     contenir un jeton insécable (VIN, plaque collée, URL, texte tapé sans espaces),
-    et la colonne note ne fait que 97 mm — d'où cette coupe caractère par caractère
-    en dernier recours. _wrap n'est pas modifié : il sert aussi aux factures.
+    d'où cette coupe caractère par caractère en dernier recours. _wrap n'est pas
+    modifié : il sert aussi aux factures.
     """
     out: list[str] = []
     for line in _wrap(c, text, font, size, max_w):
@@ -385,25 +495,68 @@ def _wrap_hard(c: canvas.Canvas, text: str, font: str, size: float, max_w: float
     return out or [""]
 
 
+def _identity_block(
+    c: canvas.Canvas, x: float, y_top: float, label: str, name: str,
+    rows: list[str], name_size: float = FS_BODY,
+) -> float:
+    """Bloc d'identité : libellé, nom en gras, puis les lignes de coordonnées.
+
+    Retourne le y atteint. Les lignes vides sont sautées — une base neuve n'a ni
+    téléphone ni courriel, et le bloc se resserre au lieu de laisser des trous.
+    """
+    c.setFont("Helvetica-Bold", FS_TERMS)
+    c.setFillColor(INK)
+    c.drawString(x, y_top, label)
+    y = y_top - 5.2 * mm
+
+    if name:
+        c.setFont("Helvetica-Bold", name_size)
+        c.drawString(x, y, name)
+        y -= LEAD if name_size <= FS_BODY else LEAD + 1.4 * mm
+
+    c.setFont("Helvetica", FS_BODY)
+    for row in rows:
+        if not row:
+            continue
+        c.drawString(x, y, row)
+        y -= LEAD
+    return y
 
 
+def _cell_table(
+    c: canvas.Canvas, y_top: float, headers: list[str], values: list[str],
+    widths: list[float],
+) -> float:
+    """Tableau à cellules réglées : une ligne d'en-têtes en gras, une de valeurs.
 
+    C'est la forme qu'emploie la référence pour identifier le véhicule. Retourne le
+    bas du tableau. Les filets verticaux ne descendent pas sous la dernière ligne :
+    la référence les arrête là aussi.
+    """
+    h_row = 6.2 * mm
+    y_mid = y_top - h_row
+    y_bot = y_mid - h_row
 
-def _kv_row(s: _State, pairs: list[tuple[str, str]]) -> None:
-    """Une ligne de couples libellé/valeur répartis sur la largeur utile."""
-    if not pairs:
-        return
-    s.need(10 * mm)
-    col_w = CW / len(pairs)
-    for i, (label, value) in enumerate(pairs):
-        x = ML + i * col_w
-        s.c.setFont("Helvetica", 7)
-        s.c.setFillColor(GRAY_MUTED)
-        s.c.drawString(x, s.y, label.upper())
-        s.c.setFont("Helvetica-Bold", 9)
-        s.c.setFillColor(GRAY_TXT)
-        s.c.drawString(x, s.y - 4.5 * mm, value)
-    s.move(9 * mm)
+    for y in (y_top, y_mid, y_bot):
+        _rule(c, y)
+
+    x = FRAME
+    c.setStrokeColor(INK)
+    c.setLineWidth(RULE_LW)
+    for w in widths:
+        c.line(x, y_top, x, y_bot)
+        x += w
+    c.line(PAGE_W - FRAME, y_top, PAGE_W - FRAME, y_bot)
+
+    x = FRAME
+    for header, value, w in zip(headers, values, widths):
+        c.setFillColor(INK)
+        c.setFont("Helvetica-Bold", FS_BODY)
+        c.drawString(x + PAD, y_mid + 1.9 * mm, header)
+        c.setFont("Helvetica", FS_BODY)
+        c.drawString(x + PAD, y_bot + 1.9 * mm, value)
+        x += w
+    return y_bot
 
 
 def _column_field(
@@ -414,26 +567,27 @@ def _column_field(
     Une valeur vide laisse la place blanche : au retour, le kilométrage et la
     jauge ne sont pas connus à l'impression et se remplissent à la main.
     """
-    c.setFont("Helvetica", 6.5)
-    c.setFillColor(GRAY_MUTED)
-    c.drawString(x, y, label.upper())
-    c.setFont("Helvetica-Bold", 8.5)
-    c.setFillColor(GRAY_TXT)
+    c.setFont("Helvetica", FS_LABEL)
+    c.setFillColor(INK)
+    c.drawString(x, y, label)
+    c.setFont("Helvetica-Bold", FS_FIELD)
     c.drawString(x + 26 * mm, y, value)
-    return y - 5 * mm
+    return y - 5.2 * mm
 
 
 def _comment_box(c: canvas.Canvas, x: float, y_top: float, w: float, h: float) -> float:
     """Cadre de commentaire manuscrit, avec lignes d'écriture. Retourne son bas."""
-    c.setStrokeColor(GRAY_LINE)
-    c.setLineWidth(0.4)
+    c.setStrokeColor(INK)
+    c.setLineWidth(RULE_LW)
     c.rect(x, y_top - h, w, h, fill=0, stroke=1)
-    c.setFont("Helvetica", 6)
-    c.setFillColor(GRAY_MUTED)
-    c.drawString(x + 1.5 * mm, y_top - 3.5 * mm, "Observations")
-    c.setStrokeColor(colors.HexColor("#E5E7EB"))
-    c.setLineWidth(0.3)
-    line_y = y_top - 8 * mm
+    c.setFont("Helvetica", FS_LABEL)
+    c.setFillColor(INK)
+    c.drawString(x + 1.5 * mm, y_top - 3.8 * mm, "Observations")
+    # Lignes d'écriture en filet fin : elles guident la main sans concurrencer le
+    # cadre. C'est la seule nuance de trait du document, obtenue par l'épaisseur et
+    # non par une couleur, pour rester noir sur blanc.
+    c.setLineWidth(HAIR_LW)
+    line_y = y_top - 8.5 * mm
     while line_y > y_top - h + 2 * mm:
         c.line(x + 1.5 * mm, line_y, x + w - 1.5 * mm, line_y)
         line_y -= 4.5 * mm
@@ -442,19 +596,19 @@ def _comment_box(c: canvas.Canvas, x: float, y_top: float, w: float, h: float) -
 
 def _signature_box(c: canvas.Canvas, x: float, y_top: float, w: float) -> float:
     """Date + signature d'un état. Retourne son bas."""
-    c.setFont("Helvetica", 6.5)
-    c.setFillColor(GRAY_MUTED)
-    c.drawString(x, y_top, "DATE")
-    c.setStrokeColor(GRAY_LINE)
-    c.setLineWidth(0.4)
+    c.setFont("Helvetica", FS_LABEL)
+    c.setFillColor(INK)
+    c.drawString(x, y_top, "Date")
+    c.setStrokeColor(INK)
+    c.setLineWidth(RULE_LW)
     c.line(x + 10 * mm, y_top - 0.7 * mm, x + w, y_top - 0.7 * mm)
 
     y = y_top - 6 * mm
-    c.setFont("Helvetica", 6.5)
-    c.setFillColor(GRAY_MUTED)
-    c.drawString(x, y, "SIGNATURE")
-    box_h = 12 * mm
-    c.setStrokeColor(GRAY_LINE)
+    c.setFont("Helvetica", FS_LABEL)
+    c.drawString(x, y, "Signature")
+    box_h = 11 * mm
+    c.setStrokeColor(INK)
+    c.setLineWidth(RULE_LW)
     c.rect(x, y - 2 * mm - box_h, w, box_h, fill=0, stroke=1)
     return y - 2 * mm - box_h
 
@@ -470,112 +624,84 @@ def generate_loan_contract_pdf(
 ) -> bytes:
     """Contrat de prêt, tenant sur une page (hors conditions volumineuses).
 
-    La partie basse est en deux colonnes séparées par un filet vertical : état de
-    départ à gauche, état de restitution à droite. Chaque colonne porte ses relevés,
-    son schéma du véhicule, un espace de commentaire, une date et une signature.
-    Seul le schéma de départ reçoit les dégâts enregistrés en base ; celui de
-    restitution est vierge, à annoter au stylo.
+    Habillage calqué sur les factures du garage : cadre, filets, noir sur blanc,
+    corps de 10 pt. La partie basse est en deux colonnes séparées par un filet
+    vertical — état de départ à gauche, restitution à droite — où le corps descend à
+    8 et 7 pt pour tenir sur le feuillet. Seul le schéma de départ reçoit les dégâts
+    enregistrés en base ; celui de restitution est vierge, à annoter au stylo.
     """
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
-    s = _State(c)
-
-    # ── Bandeau ───────────────────────────────────────────────────────────────
-    c.setFillColor(BLUE)
-    c.rect(0, PAGE_H - 21 * mm, PAGE_W, 21 * mm, fill=1, stroke=0)
-    c.setFillColor(colors.white)
-    c.setFont("Helvetica-Bold", 17)
-    c.drawString(ML, PAGE_H - 11 * mm, "CONTRAT DE PRÊT DE VÉHICULE")
-    # Le numéro rejoint le sous-titre : la droite du bandeau revient au logo, et
-    # ses 21 mm de haut n'offrent pas de troisième ligne.
-    c.setFont("Helvetica", 8)
-    c.drawString(
-        ML, PAGE_H - 16.5 * mm,
-        f"Véhicule de courtoisie mis à disposition   ·   Contrat n° {_s(res.get('id'))}",
-    )
-
-    draw_logo(c, logo, PAGE_W - MR, PAGE_H - 10.5 * mm)
-
-    s.y = PAGE_H - 25 * mm
-
-    # ── Prêteur / Emprunteur ──────────────────────────────────────────────────
-    col2 = ML + CW / 2 + 5 * mm
-    y_top = s.y
     company = company or {}
 
-    c.setFont("Helvetica-Bold", 7.5)
-    c.setFillColor(BLUE)
-    c.drawString(ML, y_top, "PRÊTEUR")
-    c.drawString(col2, y_top, "EMPRUNTEUR")
+    # Le cadre d'abord : c'est lui qui donne au document son air d'imprimé, tout ce
+    # qui suit vit à l'intérieur.
+    top = _draw_frame(c)
 
-    garage_rows = [
-        _s(company.get("name")),
-        _s(company.get("addressLine1")),
-        f"{_s(company.get('postalCode'))} {_s(company.get('city'))}".strip(),
-        (f"Tél. {company['phone']}" if company.get("phone") else ""),
-        _s(company.get("email")),
-    ]
+    # ── Prêteur, en haut à gauche · logo en haut à droite ─────────────────────
+    ville = f"{_s(company.get('postalCode'))} {_s(company.get('city'))}".strip().upper()
+    y_left = _identity_block(
+        c, CL, top, "PRÊTEUR", _s(company.get("name")).upper(),
+        [
+            _s(company.get("addressLine1")).upper(),
+            ville,
+            (f"TEL : {company['phone']}" if company.get("phone") else ""),
+            (f"EMAIL : {company['email']}" if company.get("email") else ""),
+        ],
+        name_size=FS_NAME,
+    )
+
+    logo_h = _draw_logo_plain(c, logo, CR, top)
+
+    # ── Titre du document, puis l'emprunteur en regard ────────────────────────
+    # Le titre porte le numéro, comme « FACTURE Mécanique N° : … » sur la référence.
+    y = min(y_left, top - logo_h) - 4 * mm
+    c.setFont("Helvetica-Bold", FS_BODY)
+    c.setFillColor(INK)
+    c.drawString(CL, y, f"CONTRAT DE PRÊT DE VÉHICULE N° : {_s(res.get('id'))}")
+
+    col2 = CL + CONTENT_W / 2
     client_name = " ".join(
         filter(None, [(_s(client.get("lastName")) or "").upper(), _s(client.get("firstName"))])
     ).strip()
-    client_rows = [
-        client_name,
-        _s(client.get("address")),
-        f"{_s(client.get('postalCode'))} {_s(client.get('city'))}".strip(),
-        (f"Tél. {client['phone']}" if client.get("phone") else ""),
-        _s(client.get("email")),
-    ]
-
-    y_l = y_r = y_top - 4.5 * mm
-    c.setFont("Helvetica", 8)
-    c.setFillColor(GRAY_TXT)
-    for row in garage_rows:
-        if row:
-            c.drawString(ML, y_l, row)
-            y_l -= 3.7 * mm
-    for row in client_rows:
-        if row:
-            c.drawString(col2, y_r, row)
-            y_r -= 3.7 * mm
-
-    s.y = min(y_l, y_r) - 1 * mm
-
-    # ── Véhicule prêté ────────────────────────────────────────────────────────
-    # Le numéro de parc a été retiré : la plaque et le couple marque/modèle
-    # identifient le véhicule sans ambiguïté pour l'emprunteur.
-    # Titre compact : un bandeau de section pleine largeur coûtait 13 mm de haut,
-    # trop cher en tête de page pour un bloc d'une seule ligne.
-    s.move(4 * mm)
-    s.text(ML, "VÉHICULE PRÊTÉ", font="Helvetica-Bold", size=7, color=BLUE)
-    s.move(1.5 * mm)
-    s.hrule()
-    s.move(4.5 * mm)
-    brand_model = " ".join(
-        filter(None, [_s(vehicle.get("brand")), _s(vehicle.get("model"))])
-    ).strip()
-    _kv_row(
-        s,
+    y_right = _identity_block(
+        c, col2, y, "EMPRUNTEUR", client_name,
         [
-            ("Marque et modèle", brand_model),
-            ("Immatriculation", _s(vehicle.get("licensePlate"))),
+            _s(client.get("address")),
+            f"{_s(client.get('postalCode'))} {_s(client.get('city'))}".strip().upper(),
+            (f"TEL : {client['phone']}" if client.get("phone") else ""),
+            (f"EMAIL : {client['email']}" if client.get("email") else ""),
         ],
     )
 
+    # ── Véhicule prêté, en cellules réglées ───────────────────────────────────
+    # Le kilométrage et les dates ne figurent pas ici : ils appartiennent aux deux
+    # colonnes d'état, où ils diffèrent entre le départ et la restitution.
+    third = (PAGE_W - 2 * FRAME) / 3
+    y = _cell_table(
+        c, min(y_right, y - 4 * mm) - 3 * mm,
+        ["Marque", "Modèle", "Immatriculation"],
+        [_s(vehicle.get("brand")), _s(vehicle.get("model")), _s(vehicle.get("licensePlate"))],
+        [third, third, third],
+    )
+
     # ── Départ / Restitution, en deux colonnes ────────────────────────────────
-    section_top = s.y - 1 * mm
-    gutter = 10 * mm
-    col_w = (CW - gutter) / 2
-    left_x = ML
-    right_x = ML + col_w + gutter
+    section_top = y
+    half = (PAGE_W - 2 * FRAME) / 2
+    left_x = CL
+    right_x = FRAME + half + PAD
+    col_w = half - 2 * PAD
+    mid_x = FRAME + half
 
-    c.setFillColor(GRAY_BG)
-    c.rect(ML, section_top - 6 * mm, CW, 6 * mm, fill=1, stroke=0)
-    c.setFont("Helvetica-Bold", 8)
-    c.setFillColor(BLUE)
-    c.drawString(left_x + 2 * mm, section_top - 4.2 * mm, "ÉTAT DE DÉPART")
-    c.drawString(right_x + 2 * mm, section_top - 4.2 * mm, "ÉTAT DE RESTITUTION")
+    # Bandeau des deux titres, en cellules réglées comme le reste
+    head_h = 6.2 * mm
+    _rule(c, section_top - head_h)
+    c.setFont("Helvetica-Bold", FS_BODY)
+    c.setFillColor(INK)
+    c.drawString(left_x, section_top - head_h + 1.9 * mm, "ÉTAT DE DÉPART")
+    c.drawString(right_x, section_top - head_h + 1.9 * mm, "ÉTAT DE RESTITUTION")
 
-    y = section_top - 9.5 * mm
+    y = section_top - head_h - 5.5 * mm
 
     # Relevés : mêmes intitulés de part et d'autre, valeurs vides quand inconnues
     yl = _column_field(c, left_x, y, "Date", _date(res.get("startDate")))
@@ -588,78 +714,81 @@ def generate_loan_contract_pdf(
     # garde son alignement, la jauge prend la place de la valeur.
     y_fuel = min(yl, yr)
     gauge_w = 40 * mm
+    gauge_h = 0.0
     for x0, lvl in (
         (left_x, res.get("fuelLevelEighths")),
         (right_x, res.get("endFuelLevelEighths")),
     ):
-        c.setFont("Helvetica", 6.5)
-        c.setFillColor(GRAY_MUTED)
-        c.drawString(x0, y_fuel, "CARBURANT")
+        c.setFont("Helvetica", FS_LABEL)
+        c.setFillColor(INK)
+        c.drawString(x0, y_fuel, "Carburant")
         gauge_h = _fuel_gauge(c, x0 + 26 * mm, y_fuel + 2.6 * mm, gauge_w, lvl)
 
     # Une ligne sautée entre le carburant et les dessins
     y = y_fuel - gauge_h - 5 * mm
 
-    # Les deux schémas, côte à côte, centrés dans leur colonne
-    diagram_w = 38 * mm
-    diagram_x_left = left_x + (col_w - diagram_w) / 2
-    diagram_x_right = right_x + (col_w - diagram_w) / 2
-    diagram_h = _draw_car(c, diagram_x_left, y, diagram_w, damages)
-    _draw_car(c, diagram_x_right, y, diagram_w, None)
+    # Les deux schémas, côte à côte, centrés dans leur colonne. 37 mm et non 40 :
+    # avec le corps de 10 pt de l'en-tête, c'est ce qui ramène les conditions du prêt
+    # sur le premier feuillet. Mesuré, pas estimé.
+    diagram_w = 37 * mm
+    diagram_h = _draw_car(c, left_x + (col_w - diagram_w) / 2, y, diagram_w, damages)
+    _draw_car(c, right_x + (col_w - diagram_w) / 2, y, diagram_w, None)
     y -= diagram_h + 4 * mm
 
     # Légende, sous le seul schéma qui porte des points
+    c.setFillColor(INK)
     if damages:
-        c.setFont("Helvetica", 5.5)
-        c.setFillColor(GRAY_MUTED)
+        c.setFont("Helvetica", 6)
         c.drawCentredString(left_x + col_w / 2, y, LEGEND_TEXT)
-    c.setFont("Helvetica-Oblique", 5.5)
-    c.setFillColor(GRAY_MUTED)
+    c.setFont("Helvetica-Oblique", 6)
     c.drawCentredString(
         right_x + col_w / 2, y, "Entourer les dégâts constatés à la restitution"
     )
     y -= 3.5 * mm
 
     # Espace commentaire, un par état
-    box_h = 16 * mm
+    box_h = 14 * mm
     _comment_box(c, left_x, y, col_w, box_h)
     _comment_box(c, right_x, y, col_w, box_h)
-    y -= box_h + 5 * mm
+    y -= box_h + 4 * mm
 
     # Deux dates, deux signatures
     bottom_left = _signature_box(c, left_x, y, col_w)
     bottom_right = _signature_box(c, right_x, y, col_w)
     section_bottom = min(bottom_left, bottom_right) - 2 * mm
 
-    # Filet vertical sur toute la hauteur de la partie : c'est lui qui sépare
-    # visuellement le départ de la restitution, du bandeau des titres jusqu'au bas
-    # des signatures.
-    c.setStrokeColor(GRAY_LINE)
-    c.setLineWidth(0.6)
-    c.line(ML + col_w + gutter / 2, section_top - 6 * mm, ML + col_w + gutter / 2, section_bottom)
-
-    s.y = section_bottom - 2 * mm
+    # Filet vertical du bandeau des titres jusqu'au bas des signatures, et filet
+    # horizontal de clôture : la partie devient une cellule à deux compartiments,
+    # comme le bloc de règlement de la référence.
+    c.setStrokeColor(INK)
+    c.setLineWidth(RULE_LW)
+    c.line(mid_x, section_top, mid_x, section_bottom)
+    _rule(c, section_bottom)
 
     # ── Conditions ────────────────────────────────────────────────────────────
     # Texte libre saisi par le garage : sa longueur décide seule d'un éventuel
     # second feuillet, le corps du contrat tenant sur une page.
     if terms and terms.strip():
-        # Titre compact : chaque millimètre gagné ici est une ligne de clauses
-        # de plus sur la page.
-        s.move(4 * mm)
-        s.text(ML, "CONDITIONS DU PRÊT", font="Helvetica-Bold", size=7, color=BLUE)
-        s.move(1.5 * mm)
-        s.hrule()
-        s.move(3.5 * mm)
-        c.setFillColor(GRAY_TXT)
+        y = section_bottom - 4 * mm
+        c.setFont("Helvetica-Bold", FS_BODY)
+        c.setFillColor(INK)
+        c.drawString(CL, y, "CONDITIONS DU PRÊT")
+        y -= 4 * mm
+
+        # Saut de page tenu ici plutôt que par _State.need : celui-ci appelle
+        # showPage() sans rien retracer, et la seconde page sortirait sans cadre.
         for paragraph in terms.replace("\r\n", "\n").split("\n"):
             if not paragraph.strip():
-                s.move(2 * mm)
+                y -= 2 * mm
                 continue
-            for line in _wrap_hard(c, paragraph, "Helvetica", 6.5, CW - 4 * mm):
-                s.need(5 * mm)
-                s.text(ML + 2 * mm, line, size=6.5)
-                s.move(3 * mm)
+            for line in _wrap_hard(c, paragraph, "Helvetica", FS_TERMS, CONTENT_W):
+                if y - 4 * mm < FRAME + PAD:
+                    c.showPage()
+                    y = _draw_frame(c)
+                c.setFont("Helvetica", FS_TERMS)
+                c.setFillColor(INK)
+                c.drawString(CL, y, line)
+                y -= 4 * mm
 
     c.showPage()
     c.save()
