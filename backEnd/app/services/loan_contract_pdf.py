@@ -239,6 +239,40 @@ def _draw_frame(c: canvas.Canvas) -> float:
     return PAGE_H - FRAME - PAD
 
 
+def _datetime(v) -> str:
+    """Date suivie de l'heure, celle-ci omise quand elle vaut minuit.
+
+    `loanReservations.startDate/endDate` sont des DATETIME(3), mais la fiche de
+    réservation ne propose que des champs `type="date"` : la valeur arrive donc à
+    00:00 et imprimer « 12/08/2026 00:00 » serait du bruit sur chaque contrat. Le
+    jour où la fiche saisira une heure, elle s'affichera d'elle-même, sans rien
+    changer ici.
+
+    `_date` de billing_pdf n'est pas modifié : il tronque à la date, et il sert aux
+    factures.
+    """
+    if not v:
+        return ""
+    texte = str(v)
+    jour = _date(texte)
+    heure = texte[11:16] if len(texte) >= 16 else ""
+    if not heure or heure == "00:00":
+        return jour
+    return f"{jour} {heure}"
+
+
+def _periode(debut, fin) -> str:
+    """Libellé de la période de location, tel qu'il figure dans le bandeau.
+
+    Sans terme connu — un prêt en cours —, « du 12/08/2026 » resterait en suspens :
+    on écrit « à partir du », qui se lit et qui dit la même chose.
+    """
+    d, f = _datetime(debut), _datetime(fin)
+    if not d:
+        return "-"
+    return f"du {d} au {f}" if f else f"à partir du {d}"
+
+
 def _rule(c: canvas.Canvas, y: float, x0: float = FRAME, x1: float | None = None,
           lw: float = RULE_LW) -> None:
     """Règle horizontale. Par défaut, toute la largeur du cadre — c'est ainsi que
@@ -694,30 +728,34 @@ def generate_loan_contract_pdf(
     )
 
     # ── Véhicule prêté et période, en cellules réglées ────────────────────────
-    # Les deux dates figurent ici EN PLUS des colonnes d'état, où elles se
-    # remplissent à la main : le bandeau donne la période prévue, les colonnes
-    # constatent ce qui s'est passé.
+    # La période tient dans UNE cellule, en fin de ligne : « du … au … », ou « à
+    # partir du … » sans terme connu. Deux colonnes de dates laissaient une cellule
+    # vide sur tout prêt en cours, alors que la phrase dit la même chose et se lit.
+    #
+    # Elle figure ici EN PLUS des colonnes d'état, où les dates se remplissent à la
+    # main : le bandeau donne la période prévue, les colonnes constatent ce qui s'est
+    # passé.
     #
     # Un tiret quand une valeur manque, et non une cellule blanche : dans un tableau
-    # réglé, le vide se lit comme un oubli de saisie. La date de fin est celle qui
-    # manque le plus souvent — un prêt ouvert n'a pas de terme connu. Le kilométrage
-    # et la jauge, eux, gardent leur place blanche (§ 53) : ils sont destinés à être
-    # écrits au stylo, pas à constater une absence.
+    # réglé, le vide se lit comme un oubli de saisie. Le kilométrage et la jauge, eux,
+    # gardent leur place blanche (§ 53) : ils sont destinés à être écrits au stylo,
+    # pas à constater une absence.
     #
     # Largeurs par proportions puis normalisées à la largeur exacte du cadre : une
-    # somme arrondie laisserait un filet vertical à côté du bord.
-    parts = [42.0, 46.0, 38.0, 36.0, 35.6]
+    # somme arrondie laisserait un filet vertical à côté du bord. La cellule de
+    # période est taillée sur son cas le plus long — « du 12/08/2026 09:00 au
+    # 14/08/2026 17:30 » demande 71,7 mm, marges comprises.
+    parts = [38.0, 44.0, 40.0, 75.6]
     total = PAGE_W - 2 * FRAME
     widths = [total * part / sum(parts) for part in parts]
     y = _cell_table(
         c, min(y_right, y - 4 * mm) - 3 * mm,
-        ["Marque", "Modèle", "Immatriculation", "Date de début", "Date de fin"],
+        ["Marque", "Modèle", "Immatriculation", "Location"],
         [
             _s(vehicle.get("brand")) or "-",
             _s(vehicle.get("model")) or "-",
             _s(vehicle.get("licensePlate")) or "-",
-            _date(res.get("startDate")) or "-",
-            _date(res.get("endDate")) or "-",
+            _periode(res.get("startDate"), res.get("endDate")),
         ],
         widths,
     )
