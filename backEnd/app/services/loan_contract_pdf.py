@@ -8,9 +8,8 @@ les gris des factures.
 API publique :
   generate_loan_contract_pdf(res, vehicle, client, company, damages, terms, logo) → bytes
 
-Habillage : imprimé administratif, calqué sur les factures que le garage édite
-déjà, pour que les deux papiers se rangent dans le même dossier client. Mesuré sur
-un exemplaire de référence :
+Habillage : celui de `pdf_template`, commun à tous les papiers remis au client,
+relevé sur une facture que le garage édite déjà. Pour mémoire :
 
   * un cadre noir à 6,2 mm des quatre bords, règles sur 197,6 mm ;
   * aucune couleur, aucun aplat — noir sur blanc, filets fins ;
@@ -52,50 +51,34 @@ from reportlab.lib.utils import ImageReader
 from reportlab.lib.units import mm
 from reportlab.lib import colors
 
-from app.services.billing_pdf import (
-    PAGE_W,
+from app.services.billing_pdf import _date, _s, _wrap
+from app.services.pdf_template import (
+    CL,
+    CONTENT_W,
+    CR,
+    FRAME,
+    FRAME_W,
+    FS_BODY,
+    FS_FIELD,
+    FS_LABEL,
+    FS_NAME,
+    FS_TERMS,
+    HAIR_LW,
+    INK,
+    LEAD,
+    LOGO_H,
+    LOGO_W,
+    PAD,
     PAGE_H,
-    _date,
-    _s,
-    _wrap,
+    PAGE_W,
+    RULE_LW,
+    cell_table,
+    draw_frame,
+    draw_logo_plain,
+    identity_block,
+    rule,
+    widths as largeurs_colonnes,
 )
-
-# ── Habillage : cadre, filets, corps ─────────────────────────────────────────
-# Valeurs relevées sur la facture de référence. Le cadre est à 6,2 mm des quatre
-# bords ; le texte respire de 3 mm à l'intérieur, sinon il colle au filet.
-FRAME = 6.2 * mm
-PAD = 3 * mm
-CL = FRAME + PAD                    # bord gauche du texte
-CR = PAGE_W - FRAME - PAD           # bord droit du texte
-CONTENT_W = CR - CL
-
-INK = colors.black                  # une seule encre : le document part sur une
-                                    # imprimante noir et blanc et se photocopie.
-FRAME_LW = 0.8
-RULE_LW = 0.5
-HAIR_LW = 0.3
-
-# Corps. La référence n'en emploie que trois ; les deux plus petits servent
-# uniquement à la partie départ/restitution, pour tenir sur une page.
-FS_NAME = 14        # raison sociale
-FS_BODY = 10        # texte courant, en-têtes de tableau
-FS_TERMS = 8        # conditions du prêt
-FS_FIELD = 8        # relevés des deux colonnes
-FS_LABEL = 7        # libellés des relevés
-LEAD = 4.6 * mm     # interligne du texte courant, relevé sur la référence
-
-# Logo : jusqu'à 78 × 30 mm en haut à droite, sans plaque ni cadre derrière —
-# contrairement aux factures de l'application, dont le bandeau sombre en impose
-# une. L'image garde ses proportions et se cale en haut à droite du cadre.
-#
-# Conséquence pour le fichier fourni dans les réglages : à cette emprise, 300 dpi
-# demandent 920 × 355 px. C'est donc CE cadre qui fixe la consigne affichée dans
-# CompanyLogoSection.tsx, et non celui des factures qui ne réclamerait que
-# 440 × 140 px — un fichier calibré pour la facture sortirait deux fois trop
-# grossier ici. Les trois endroits doivent rester d'accord : ici,
-# billing_pdf.draw_logo et CompanyLogoSection.tsx.
-LOGO_W = 78 * mm
-LOGO_H = 30 * mm
 
 # ── Libellés français ─────────────────────────────────────────────────────────
 # Codes en anglais côté API, libellés français ici. Le miroir côté interface est
@@ -226,19 +209,6 @@ def _km(v) -> str:
         return ""
 
 
-def _draw_frame(c: canvas.Canvas) -> float:
-    """Trace le cadre de la page et retourne le y du premier texte.
-
-    Appelée pour chaque page, y compris la seconde qu'un texte de conditions
-    volumineux peut provoquer : un feuillet sans cadre ne ressemblerait plus à
-    l'imprimé, et c'est le cadre qui fait l'unité avec les factures du garage.
-    """
-    c.setStrokeColor(INK)
-    c.setLineWidth(FRAME_LW)
-    c.rect(FRAME, FRAME, PAGE_W - 2 * FRAME, PAGE_H - 2 * FRAME, fill=0, stroke=1)
-    return PAGE_H - FRAME - PAD
-
-
 def _datetime(v) -> str:
     """Date suivie de l'heure, celle-ci omise quand elle vaut minuit.
 
@@ -271,46 +241,6 @@ def _periode(debut, fin) -> str:
     if not d:
         return "-"
     return f"du {d} au {f}" if f else f"à partir du {d}"
-
-
-def _rule(c: canvas.Canvas, y: float, x0: float = FRAME, x1: float | None = None,
-          lw: float = RULE_LW) -> None:
-    """Règle horizontale. Par défaut, toute la largeur du cadre — c'est ainsi que
-    la référence sépare ses blocs, d'un filet qui touche les deux bords."""
-    c.setStrokeColor(INK)
-    c.setLineWidth(lw)
-    c.line(x0, y, PAGE_W - FRAME if x1 is None else x1, y)
-
-
-def _draw_logo_plain(c: canvas.Canvas, logo: bytes | None, right_x: float, top_y: float) -> float:
-    """Logo posé sur le blanc, sans plaque ni cadre. Retourne la hauteur occupée.
-
-    Variante propre au contrat : `draw_logo` de billing_pdf pose une plaque blanche
-    sous l'image, indispensable sur le bandeau sombre d'une facture, parasite ici où
-    le fond est déjà blanc. L'emprise est aussi bien plus large (78 × 30 mm contre
-    40 × 15), à l'image de la référence.
-
-    L'image garde ses proportions et se cale en HAUT à droite : un logo allongé
-    occupe alors toute la largeur disponible, un logo carré reste haut de 30 mm.
-
-    Ne dessine rien et ne consomme aucune hauteur si `logo` est None.
-    """
-    if not logo:
-        return 0.0
-    try:
-        img = ImageReader(io.BytesIO(logo))
-        iw, ih = img.getSize()
-    except Exception:
-        # Fichier illisible malgré le contrôle à l'upload : le contrat sort sans
-        # logo plutôt que de ne pas sortir du tout.
-        return 0.0
-    if not iw or not ih:
-        return 0.0
-
-    scale = min(LOGO_W / iw, LOGO_H / ih)
-    w, h = iw * scale, ih * scale
-    c.drawImage(img, right_x - w, top_y - h, width=w, height=h, mask="auto")
-    return h
 
 
 def _draw_car(
@@ -531,87 +461,6 @@ def _wrap_hard(c: canvas.Canvas, text: str, font: str, size: float, max_w: float
     return out or [""]
 
 
-def _identity_block(
-    c: canvas.Canvas, x: float, y_top: float, label: str, name: str,
-    rows: list[str], name_size: float = FS_BODY,
-) -> float:
-    """Bloc d'identité : libellé, nom en gras, puis les lignes de coordonnées.
-
-    Retourne le y atteint. Les lignes vides sont sautées — une base neuve n'a ni
-    téléphone ni courriel, et le bloc se resserre au lieu de laisser des trous.
-    """
-    c.setFont("Helvetica-Bold", FS_TERMS)
-    c.setFillColor(INK)
-    c.drawString(x, y_top, label)
-    y = y_top - 5.2 * mm
-
-    if name:
-        c.setFont("Helvetica-Bold", name_size)
-        c.drawString(x, y, name)
-        y -= LEAD if name_size <= FS_BODY else LEAD + 1.4 * mm
-
-    c.setFont("Helvetica", FS_BODY)
-    for row in rows:
-        if not row:
-            continue
-        c.drawString(x, y, row)
-        y -= LEAD
-    return y
-
-
-def _cell_table(
-    c: canvas.Canvas, y_top: float, headers: list[str], values: list[str],
-    widths: list[float],
-) -> float:
-    """Tableau à cellules réglées : une ligne d'en-têtes en gras, une de valeurs.
-
-    C'est la forme qu'emploie la référence pour identifier le véhicule. Retourne le
-    bas du tableau. Les filets verticaux ne descendent pas sous la dernière ligne :
-    la référence les arrête là aussi.
-    """
-    h_row = 6.2 * mm
-    y_mid = y_top - h_row
-    y_bot = y_mid - h_row
-
-    for y in (y_top, y_mid, y_bot):
-        _rule(c, y)
-
-    x = FRAME
-    c.setStrokeColor(INK)
-    c.setLineWidth(RULE_LW)
-    for w in widths:
-        c.line(x, y_top, x, y_bot)
-        x += w
-    c.line(PAGE_W - FRAME, y_top, PAGE_W - FRAME, y_bot)
-
-    x = FRAME
-    for header, value, w in zip(headers, values, widths):
-        c.setFillColor(INK)
-        c.setFont("Helvetica-Bold", FS_BODY)
-        c.drawString(x + PAD, y_mid + 1.9 * mm, header)
-        c.setFont("Helvetica", FS_BODY)
-        c.drawString(x + PAD, y_bot + 1.9 * mm, _fit(c, value, "Helvetica", FS_BODY, w - 2 * PAD))
-        x += w
-    return y_bot
-
-
-def _fit(c: canvas.Canvas, texte: str, police: str, corps: float, largeur: float) -> str:
-    """Écourte à la largeur disponible, suffixé d'une ellipse.
-
-    Sans cela une valeur trop longue — un modèle à rallonge, une raison sociale —
-    déborde sur la cellule voisine et vient coller sa valeur. C'est exactement le
-    défaut que présente la colonne des unités sur la facture ; autant ne pas le
-    reproduire ici.
-    """
-    if not texte or c.stringWidth(texte, police, corps) <= largeur:
-        return texte
-    ellipse = "…"
-    coupe = texte
-    while coupe and c.stringWidth(coupe + ellipse, police, corps) > largeur:
-        coupe = coupe[:-1]
-    return (coupe + ellipse) if coupe else ""
-
-
 def _column_field(
     c: canvas.Canvas, x: float, y: float, label: str, value: str
 ) -> float:
@@ -689,11 +538,11 @@ def generate_loan_contract_pdf(
 
     # Le cadre d'abord : c'est lui qui donne au document son air d'imprimé, tout ce
     # qui suit vit à l'intérieur.
-    top = _draw_frame(c)
+    top = draw_frame(c)
 
     # ── Prêteur, en haut à gauche · logo en haut à droite ─────────────────────
     ville = f"{_s(company.get('postalCode'))} {_s(company.get('city'))}".strip().upper()
-    y_left = _identity_block(
+    y_left = identity_block(
         c, CL, top, "PRÊTEUR", _s(company.get("name")).upper(),
         [
             _s(company.get("addressLine1")).upper(),
@@ -704,7 +553,7 @@ def generate_loan_contract_pdf(
         name_size=FS_NAME,
     )
 
-    logo_h = _draw_logo_plain(c, logo, CR, top)
+    logo_h = draw_logo_plain(c, logo, CR, top)
 
     # ── Titre du document, puis l'emprunteur en regard ────────────────────────
     # Le titre porte le numéro, comme « FACTURE Mécanique N° : … » sur la référence.
@@ -717,7 +566,7 @@ def generate_loan_contract_pdf(
     client_name = " ".join(
         filter(None, [(_s(client.get("lastName")) or "").upper(), _s(client.get("firstName"))])
     ).strip()
-    y_right = _identity_block(
+    y_right = identity_block(
         c, col2, y, "EMPRUNTEUR", client_name,
         [
             _s(client.get("address")),
@@ -745,10 +594,7 @@ def generate_loan_contract_pdf(
     # somme arrondie laisserait un filet vertical à côté du bord. La cellule de
     # période est taillée sur son cas le plus long — « du 12/08/2026 09:00 au
     # 14/08/2026 17:30 » demande 71,7 mm, marges comprises.
-    parts = [38.0, 44.0, 40.0, 75.6]
-    total = PAGE_W - 2 * FRAME
-    widths = [total * part / sum(parts) for part in parts]
-    y = _cell_table(
+    y = cell_table(
         c, min(y_right, y - 4 * mm) - 3 * mm,
         ["Marque", "Modèle", "Immatriculation", "Location"],
         [
@@ -757,7 +603,7 @@ def generate_loan_contract_pdf(
             _s(vehicle.get("licensePlate")) or "-",
             _periode(res.get("startDate"), res.get("endDate")),
         ],
-        widths,
+        largeurs_colonnes([38.0, 44.0, 40.0, 75.6]),
     )
 
     # ── Départ / Restitution, en deux colonnes ────────────────────────────────
@@ -770,7 +616,7 @@ def generate_loan_contract_pdf(
 
     # Bandeau des deux titres, en cellules réglées comme le reste
     head_h = 6.2 * mm
-    _rule(c, section_top - head_h)
+    rule(c, section_top - head_h)
     c.setFont("Helvetica-Bold", FS_BODY)
     c.setFillColor(INK)
     c.drawString(left_x, section_top - head_h + 1.9 * mm, "ÉTAT DE DÉPART")
@@ -838,7 +684,7 @@ def generate_loan_contract_pdf(
     c.setStrokeColor(INK)
     c.setLineWidth(RULE_LW)
     c.line(mid_x, section_top, mid_x, section_bottom)
-    _rule(c, section_bottom)
+    rule(c, section_bottom)
 
     # ── Conditions ────────────────────────────────────────────────────────────
     # Texte libre saisi par le garage : sa longueur décide seule d'un éventuel
@@ -859,7 +705,7 @@ def generate_loan_contract_pdf(
             for line in _wrap_hard(c, paragraph, "Helvetica", FS_TERMS, CONTENT_W):
                 if y - 4 * mm < FRAME + PAD:
                     c.showPage()
-                    y = _draw_frame(c)
+                    y = draw_frame(c)
                 c.setFont("Helvetica", FS_TERMS)
                 c.setFillColor(INK)
                 c.drawString(CL, y, line)
