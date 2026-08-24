@@ -556,9 +556,26 @@ def _cell_table(
         c.setFont("Helvetica-Bold", FS_BODY)
         c.drawString(x + PAD, y_mid + 1.9 * mm, header)
         c.setFont("Helvetica", FS_BODY)
-        c.drawString(x + PAD, y_bot + 1.9 * mm, value)
+        c.drawString(x + PAD, y_bot + 1.9 * mm, _fit(c, value, "Helvetica", FS_BODY, w - 2 * PAD))
         x += w
     return y_bot
+
+
+def _fit(c: canvas.Canvas, texte: str, police: str, corps: float, largeur: float) -> str:
+    """Écourte à la largeur disponible, suffixé d'une ellipse.
+
+    Sans cela une valeur trop longue — un modèle à rallonge, une raison sociale —
+    déborde sur la cellule voisine et vient coller sa valeur. C'est exactement le
+    défaut que présente la colonne des unités sur la facture ; autant ne pas le
+    reproduire ici.
+    """
+    if not texte or c.stringWidth(texte, police, corps) <= largeur:
+        return texte
+    ellipse = "…"
+    coupe = texte
+    while coupe and c.stringWidth(coupe + ellipse, police, corps) > largeur:
+        coupe = coupe[:-1]
+    return (coupe + ellipse) if coupe else ""
 
 
 def _column_field(
@@ -676,15 +693,33 @@ def generate_loan_contract_pdf(
         ],
     )
 
-    # ── Véhicule prêté, en cellules réglées ───────────────────────────────────
-    # Le kilométrage et les dates ne figurent pas ici : ils appartiennent aux deux
-    # colonnes d'état, où ils diffèrent entre le départ et la restitution.
-    third = (PAGE_W - 2 * FRAME) / 3
+    # ── Véhicule prêté et période, en cellules réglées ────────────────────────
+    # Les deux dates figurent ici EN PLUS des colonnes d'état, où elles se
+    # remplissent à la main : le bandeau donne la période prévue, les colonnes
+    # constatent ce qui s'est passé.
+    #
+    # Un tiret quand une valeur manque, et non une cellule blanche : dans un tableau
+    # réglé, le vide se lit comme un oubli de saisie. La date de fin est celle qui
+    # manque le plus souvent — un prêt ouvert n'a pas de terme connu. Le kilométrage
+    # et la jauge, eux, gardent leur place blanche (§ 53) : ils sont destinés à être
+    # écrits au stylo, pas à constater une absence.
+    #
+    # Largeurs par proportions puis normalisées à la largeur exacte du cadre : une
+    # somme arrondie laisserait un filet vertical à côté du bord.
+    parts = [42.0, 46.0, 38.0, 36.0, 35.6]
+    total = PAGE_W - 2 * FRAME
+    widths = [total * part / sum(parts) for part in parts]
     y = _cell_table(
         c, min(y_right, y - 4 * mm) - 3 * mm,
-        ["Marque", "Modèle", "Immatriculation"],
-        [_s(vehicle.get("brand")), _s(vehicle.get("model")), _s(vehicle.get("licensePlate"))],
-        [third, third, third],
+        ["Marque", "Modèle", "Immatriculation", "Date de début", "Date de fin"],
+        [
+            _s(vehicle.get("brand")) or "-",
+            _s(vehicle.get("model")) or "-",
+            _s(vehicle.get("licensePlate")) or "-",
+            _date(res.get("startDate")) or "-",
+            _date(res.get("endDate")) or "-",
+        ],
+        widths,
     )
 
     # ── Départ / Restitution, en deux colonnes ────────────────────────────────
