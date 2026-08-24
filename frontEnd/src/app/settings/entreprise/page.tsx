@@ -39,5 +39,17 @@ export default async function ParametresServerPage() {
     // affiche formulaire vide avec erreur
   }
 
-  return <ParametresPage initial={settings} />;
+  // Le message de bas de page vit dans `settings` et non dans `companySettings`
+  // (migration 028) : une seconde lecture, tolérante à l'échec comme la première.
+  let footerMessage = "";
+  try {
+    const list = await apiJson<{ key: string; value: string }[]>("/api/v1/settings", cookie);
+    if (Array.isArray(list)) {
+      footerMessage = list.find((s) => s.key === "billingFooterMessage")?.value ?? "";
+    }
+  } catch {
+    //
+  }
+
+  return <ParametresPage initial={settings} footerMessage={footerMessage} />;
 }

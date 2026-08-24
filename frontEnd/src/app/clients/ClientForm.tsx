@@ -55,6 +55,7 @@ export default function ClientForm({ initial, onSaved, onClose }: ClientFormProp
   const [clientType, setClientType] = useState((initial?.clientType as string) ?? "individual");
   const [vatNumber, setVatNumber] = useState((initial?.vatNumber as string) ?? "");
   const [siren, setSiren] = useState((initial?.siren as string) ?? "");
+  const [accountNumber, setAccountNumber] = useState((initial?.accountNumber as string) ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -77,6 +78,7 @@ export default function ClientForm({ initial, onSaved, onClose }: ClientFormProp
       clientType,
       vatNumber: isCompany ? vatNumber || undefined : undefined,
       siren: isCompany ? siren || undefined : undefined,
+      accountNumber: accountNumber || undefined,
     };
     const url = id ? `/api/proxy/clients/${id}` : "/api/proxy/clients";
     const method = id ? "PATCH" : "POST";
@@ -173,6 +175,23 @@ export default function ClientForm({ initial, onSaved, onClose }: ClientFormProp
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
+          </div>
+          {/* Hors de la section Entreprise à dessein : un particulier a un compte
+              comptable comme une société, alors que N° TVA et SIREN n'ont de sens
+              que pour une société. */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="accountNumber">N° de compte</Label>
+              <Input
+                id="accountNumber"
+                value={accountNumber}
+                onChange={(e) => setAccountNumber(e.target.value)}
+                placeholder="41101518"
+              />
+              <p className="text-xs text-muted-foreground">
+                Numéro venu de votre comptabilité. Imprimé sur les factures et les avoirs.
+              </p>
             </div>
           </div>
         </div>

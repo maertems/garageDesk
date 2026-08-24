@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader, PageBody } from "@/components/layout/PageHeader";
 import CompanyLogoSection from "./CompanyLogoSection";
+import BillingFooterSection from "./BillingFooterSection";
 
 type CompanySettings = {
   id: number;
@@ -57,7 +58,13 @@ function str(v: string | null | undefined) {
   return v ?? "";
 }
 
-export default function ParametresPage({ initial }: { initial: CompanySettings | null }) {
+export default function ParametresPage({
+  initial,
+  footerMessage = "",
+}: {
+  initial: CompanySettings | null;
+  footerMessage?: string;
+}) {
   const [name, setName] = useState(str(initial?.name));
   const [shareCapital, setShareCapital] = useState(initial?.shareCapital != null ? String(initial.shareCapital) : "");
   const [siren, setSiren] = useState(str(initial?.siren));
@@ -205,6 +212,18 @@ export default function ParametresPage({ initial }: { initial: CompanySettings |
                 {/* Les boutons sont en type="button" : ils n'entraînent pas la
                     soumission du formulaire qui les entoure. */}
                 <CompanyLogoSection initialHasLogo={initial?.hasLogo ?? false} />
+              </div>
+            </section>
+
+            {/* Message imprimé en bas des factures. Même raison qu'au-dessus : les
+                boutons sont en type="button", la valeur vivant dans `settings` et non
+                dans `companySettings`, elle s'enregistre à part. */}
+            <section className={SECTION}>
+              <header className={SECTION_HEADER}>
+                <h3 className={SECTION_TITLE}>Message de bas de facture</h3>
+              </header>
+              <div className={SECTION_BODY}>
+                <BillingFooterSection initial={footerMessage} />
               </div>
             </section>
 

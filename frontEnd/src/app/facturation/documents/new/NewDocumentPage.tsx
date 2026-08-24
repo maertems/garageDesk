@@ -27,6 +27,8 @@ type HeaderInfo = {
   vehicleModel: string | null;
 };
 
+type Employee = { id: number; firstName: string | null; lastName: string | null };
+
 type ParentDoc = {
   id: number;
   documentNumber: string;
@@ -66,6 +68,8 @@ export default function NewDocumentPage() {
 
   const [lines, setLines] = useState<LineDraft[]>([emptyLine(0)]);
   const [globalDiscount, setGlobalDiscount] = useState(0);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [receptionistId, setReceptionistId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -76,6 +80,12 @@ export default function NewDocumentPage() {
     if (headerIdParam) {
       fetch(`/api/proxy/headers/${headerIdParam}`).then((r) => r.json()).then(setHeader).catch(() => {});
     }
+    // Liste des réceptionnaires. Chargée même pour un avenant : il hérite du
+    // header de son devis parent, mais peut être reçu par quelqu'un d'autre.
+    fetch("/api/proxy/employees")
+      .then((r) => r.json())
+      .then((d) => setEmployees(Array.isArray(d) ? d : []))
+      .catch(() => {});
     if (parentDocumentIdParam) {
       fetch(`/api/proxy/documents/${parentDocumentIdParam}`).then((r) => r.json()).then(setParentDoc).catch(() => {});
     }
@@ -131,6 +141,8 @@ export default function NewDocumentPage() {
     setError("");
 
     const body: Record<string, unknown> = { documentType: isAmendment ? "quoteAmendment" : docType };
+    // Le réceptionnaire suit le document jusqu'à la facture, qui en figera le nom.
+    if (receptionistId) body.receptionistEmployeeId = receptionistId;
     if (isAmendment) {
       if (!parentDocumentIdParam) {
         setError("Devis parent manquant.");
@@ -223,6 +235,25 @@ export default function NewDocumentPage() {
             </div>
           </div>
         )}
+
+        <div className="mb-6">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Réceptionnaire</p>
+          <select
+            value={receptionistId ?? ""}
+            onChange={(e) => setReceptionistId(e.target.value ? Number(e.target.value) : null)}
+            className="h-9 w-full max-w-xs rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option value="">— non renseigné —</option>
+            {employees.map((e) => (
+              <option key={e.id} value={e.id}>
+                {[e.lastName?.toUpperCase(), e.firstName].filter(Boolean).join(" ")}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            Qui reçoit le client. Reporté sur la facture à l&apos;émission, où le nom est figé.
+          </p>
+        </div>
 
         {hasFixedContext ? (
           <div className="mb-6">
