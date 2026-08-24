@@ -61,6 +61,9 @@ class DocumentCreate(CamelModel):
     documentType: DocumentType
     parentDocumentId: Optional[int] = None
     headerId: Optional[int] = None
+    # Employé qui reçoit le client, choisi à la main à la création. Son NOM est figé
+    # sur la facture à l'émission (migration 028).
+    receptionistEmployeeId: Optional[int] = None
     clientId: Optional[int] = None
     vehicleId: Optional[int] = None
     kilometrage: Optional[int] = None
@@ -86,6 +89,9 @@ class DocumentLinesReplace(CamelModel):
 class DocumentResponse(CamelModel):
     id: int
     headerId: Optional[int] = None
+    # Employé qui reçoit le client, choisi à la main à la création. Son NOM est figé
+    # sur la facture à l'émission (migration 028).
+    receptionistEmployeeId: Optional[int] = None
     parentDocumentId: Optional[int] = None
     documentType: DocumentType
     documentNumber: str

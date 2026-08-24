@@ -54,7 +54,7 @@ _DOC_TRANSITIONS: dict[str, set[str]] = {
 }
 
 _DOC_COLS = (
-    "id, headerId, parentDocumentId, documentType, documentNumber, status, "
+    "id, headerId, receptionistEmployeeId, parentDocumentId, documentType, documentNumber, status, "
     "validUntil, subtotalHt, globalDiscountPercent, globalDiscountAmount, "
     "totalHt, totalVat, totalTtc, signatureId, createdAt, updatedAt"
 )
@@ -316,10 +316,12 @@ def create_document(data: DocumentCreate, current_user: dict = Depends(get_curre
         cur.execute(
             """
             INSERT INTO documents
-              (headerId, parentDocumentId, documentType, documentNumber, status, validUntil)
-            VALUES (%s, %s, %s, %s, 'draft', %s)
+              (headerId, receptionistEmployeeId, parentDocumentId, documentType,
+               documentNumber, status, validUntil)
+            VALUES (%s, %s, %s, %s, %s, 'draft', %s)
             """,
-            (header_id, parent_document_id, data.documentType, doc_number, data.validUntil),
+            (header_id, data.receptionistEmployeeId, parent_document_id,
+             data.documentType, doc_number, data.validUntil),
         )
         cur.execute("SELECT LAST_INSERT_ID() AS id")
         new_id = cur.fetchone()["id"]

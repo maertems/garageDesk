@@ -15,6 +15,9 @@ class ClientBase(CamelModel):
     clientType: str = "individual"
     vatNumber: Optional[str] = None
     siren: Optional[str] = None
+    # Numéro de compte comptable, saisi à la main et recopié sur les factures
+    # (migration 028).
+    accountNumber: Optional[str] = None
     vmId: Optional[int] = None
 
 
@@ -34,6 +37,9 @@ class ClientUpdate(CamelModel):
     clientType: Optional[str] = None
     vatNumber: Optional[str] = None
     siren: Optional[str] = None
+    # Numéro de compte comptable, saisi à la main et recopié sur les factures
+    # (migration 028).
+    accountNumber: Optional[str] = None
     vmId: Optional[int] = None
 
 

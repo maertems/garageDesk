@@ -135,6 +135,26 @@ def issue_invoice(
             detail={"code": "missingClient", "message": "Client not found for this header"},
         )
 
+    # ── 5 bis. Réceptionnaire ─────────────────────────────────────────────────
+    # Choisi à la main sur le devis ou l'OR ; la facture en fige le NOM. Un
+    # identifiant serait fragile ici : l'employé peut être renommé ou supprimé, et
+    # une facture remise au client ne doit plus changer.
+    #
+    # Absent tant que le document d'origine n'en porte pas — les devis créés avant la
+    # migration 028, par exemple. La mention disparaît alors du PDF.
+    receptionist_name = None
+    if quote.get("receptionistEmployeeId"):
+        with db_cursor() as cur:
+            cur.execute(
+                "SELECT firstName, lastName FROM employees WHERE id = %s",
+                (quote["receptionistEmployeeId"],),
+            )
+            emp = cur.fetchone()
+        if emp:
+            receptionist_name = " ".join(
+                filter(None, [(emp.get("lastName") or "").upper(), emp.get("firstName")])
+            ).strip() or None
+
     # ── 6. Vehicle snapshot ───────────────────────────────────────────────────
     with db_cursor() as cur:
         cur.execute("SELECT * FROM vehicles WHERE id = %s", (header["vehicleId"],))
@@ -153,12 +173,15 @@ def issue_invoice(
         with db_cursor() as cur:
             cur.execute(
                 """
-                SELECT lineType, label, longDescription,
-                       quantity, unitCode, unitPriceHt, discountPercent, discountAmount,
-                       vatRate, facturXVatCategory, totalHt, totalVat, totalTtc
-                FROM documentLines
-                WHERE documentId = %s
-                ORDER BY sortOrder, id
+                SELECT dl.lineType, dl.label, dl.longDescription,
+                       dl.quantity, dl.unitCode, dl.unitPriceHt, dl.discountPercent,
+                       dl.discountAmount, dl.vatRate, dl.facturXVatCategory,
+                       dl.totalHt, dl.totalVat, dl.totalTtc,
+                       a.reference AS articleReference
+                FROM documentLines dl
+                LEFT JOIN articles a ON a.id = dl.articleId
+                WHERE dl.documentId = %s
+                ORDER BY dl.sortOrder, dl.id
                 """,
                 (doc["id"],),
             )
@@ -214,7 +237,8 @@ def issue_invoice(
               clientType, clientName, clientFirstName, clientLegalName,
               clientSiren, clientVatIntracom,
               clientAddressLine1, clientPostalCode, clientCity, clientCountryCode,
-              clientEmail, clientPhone,
+              clientEmail, clientPhone, clientAccountNumber,
+              receptionistName,
               vehicleLicensePlate, vehicleVin, vehicleMake, vehicleModel, vehicleKilometrage,
               subtotalHt, globalDiscountPercent, globalDiscountAmount,
               totalHt, totalVat, totalTtc, vatBreakdownJson,
@@ -231,7 +255,8 @@ def issue_invoice(
               %s,%s,%s,%s,
               %s,%s,
               %s,%s,%s,%s,
-              %s,%s,
+              %s,%s,%s,
+              %s,
               %s,%s,%s,%s,%s,
               %s,%s,%s,
               %s,%s,%s,%s,
@@ -251,7 +276,8 @@ def issue_invoice(
                 client_type_mapped, client_name, client_first_name, client_legal_name,
                 cl.get("siren"), cl.get("vatNumber"),
                 cl.get("address"), cl.get("postalCode"), cl.get("city"), "FR",
-                cl.get("email"), cl.get("phone"),
+                cl.get("email"), cl.get("phone"), cl.get("accountNumber"),
+                receptionist_name,
                 vh.get("licensePlate"), vh.get("vin"), vh.get("brand"), vh.get("model"), vehicle_km,
                 float(totals["subtotalHt"]), float(totals["globalDiscountPercent"]), float(totals["globalDiscountAmount"]),
                 float(totals["totalHt"]), float(totals["totalVat"]), float(totals["totalTtc"]),
@@ -270,14 +296,15 @@ def issue_invoice(
                 """
                 INSERT INTO invoiceLines (
                   invoiceId, lineNumber, sourceDocumentId, sourceDocumentType,
-                  lineType, label, longDescription,
+                  lineType, articleReference, label, longDescription,
                   quantity, unitCode, unitPriceHt, discountPercent, discountAmount,
                   vatRate, facturXVatCategory, totalHt, totalVat, totalTtc
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
                 (
                     invoice_id, idx + 1, line["sourceDocumentId"], line["sourceDocumentType"],
-                    line.get("lineType"), line["label"], line.get("longDescription"),
+                    line.get("lineType"), line.get("articleReference"),
+                    line["label"], line.get("longDescription"),
                     float(line["quantity"]), line.get("unitCode"),
                     float(line["unitPriceHt"]), float(line["discountPercent"]), float(line["discountAmount"]),
                     float(line["vatRate"]), line.get("facturXVatCategory", "S"),

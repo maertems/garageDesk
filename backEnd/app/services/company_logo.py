@@ -34,3 +34,20 @@ def fetch_logo() -> bytes | None:
     if not row:
         return None
     return row.get("logo") or None
+
+
+def footer_message() -> str | None:
+    """Message commercial imprimé centré sous les lignes de la facture.
+
+    Vient des réglages (`settings.billingFooterMessage`, migration 028) et non de
+    l'instantané de la facture : c'est un texte commercial, pas une mention
+    contractuelle. Le garage doit pouvoir le changer sans que les factures déjà
+    émises portent l'ancien libellé.
+
+    Vide ou absent ⇒ None, et le bloc disparaît du document.
+    """
+    with db_cursor() as cur:
+        cur.execute("SELECT value FROM settings WHERE `key` = 'billingFooterMessage'")
+        row = cur.fetchone()
+    valeur = (row or {}).get("value") or ""
+    return valeur.strip() or None

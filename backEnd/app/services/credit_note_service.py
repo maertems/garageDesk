@@ -89,6 +89,7 @@ def issue_credit_note(data, user_id: int | None) -> int:
             cur.execute(
                 """
                 SELECT lineNumber, sourceDocumentId, sourceDocumentType, lineType,
+                       articleReference,
                        label, longDescription, quantity, unitCode,
                        unitPriceHt, discountPercent, discountAmount,
                        vatRate, facturXVatCategory, totalHt, totalVat, totalTtc
@@ -124,7 +125,7 @@ def issue_credit_note(data, user_id: int | None) -> int:
               clientType, clientName, clientFirstName, clientLegalName,
               clientSiren, clientVatIntracom,
               clientAddressLine1, clientAddressLine2, clientPostalCode, clientCity, clientCountryCode,
-              clientEmail, clientPhone,
+              clientEmail, clientPhone, clientAccountNumber, receptionistName,
               vehicleLicensePlate, vehicleVin, vehicleMake, vehicleModel, vehicleKilometrage,
               subtotalHt, globalDiscountPercent, globalDiscountAmount,
               totalHt, totalVat, totalTtc, vatBreakdownJson,
@@ -139,7 +140,7 @@ def issue_credit_note(data, user_id: int | None) -> int:
               %s,%s,%s,%s,
               %s,%s,
               %s,%s,%s,%s,%s,
-              %s,%s,
+              %s,%s,%s,%s,
               %s,%s,%s,%s,%s,
               %s,%s,%s,
               %s,%s,%s,%s,
@@ -157,6 +158,7 @@ def issue_credit_note(data, user_id: int | None) -> int:
                 inv.get("clientSiren"), inv.get("clientVatIntracom"),
                 inv.get("clientAddressLine1"), inv.get("clientAddressLine2"), inv.get("clientPostalCode"), inv.get("clientCity"), inv.get("clientCountryCode", "FR"),
                 inv.get("clientEmail"), inv.get("clientPhone"),
+                inv.get("clientAccountNumber"), inv.get("receptionistName"),
                 inv.get("vehicleLicensePlate"), inv.get("vehicleVin"), inv.get("vehicleMake"), inv.get("vehicleModel"), inv.get("vehicleKilometrage"),
                 float(totals["subtotalHt"]), float(totals["globalDiscountPercent"]), float(totals["globalDiscountAmount"]),
                 float(totals["totalHt"]), float(totals["totalVat"]), float(totals["totalTtc"]),
@@ -173,14 +175,15 @@ def issue_credit_note(data, user_id: int | None) -> int:
                 """
                 INSERT INTO creditNoteLines (
                   creditNoteId, lineNumber, sourceDocumentId, sourceDocumentType,
-                  lineType, label, longDescription,
+                  lineType, articleReference, label, longDescription,
                   quantity, unitCode, unitPriceHt, discountPercent, discountAmount,
                   vatRate, facturXVatCategory, totalHt, totalVat, totalTtc
-                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
                 (
                     cn_id, ln["lineNumber"], ln.get("sourceDocumentId"), ln.get("sourceDocumentType"),
-                    ln.get("lineType"), ln["label"], ln.get("longDescription"),
+                    ln.get("lineType"), ln.get("articleReference"),
+                    ln["label"], ln.get("longDescription"),
                     float(ln["quantity"]), ln.get("unitCode"),
                     float(ln["unitPriceHt"]), float(ln["discountPercent"]), float(ln["discountAmount"]),
                     float(ln["vatRate"]), ln.get("facturXVatCategory", "S"),

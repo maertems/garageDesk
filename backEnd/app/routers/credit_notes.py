@@ -34,7 +34,7 @@ _CN_COLS = (
     "clientType, clientName, clientFirstName, clientLegalName, "
     "clientSiren, clientVatIntracom, "
     "clientAddressLine1, clientAddressLine2, clientPostalCode, clientCity, clientCountryCode, "
-    "clientEmail, clientPhone, "
+    "clientEmail, clientPhone, clientAccountNumber, receptionistName, "
     "vehicleLicensePlate, vehicleVin, vehicleMake, vehicleModel, vehicleKilometrage, "
     "currencyCode, subtotalHt, globalDiscountPercent, globalDiscountAmount, "
     "totalHt, totalVat, totalTtc, vatBreakdownJson, "
@@ -44,7 +44,7 @@ _CN_COLS = (
 
 _LINE_COLS = (
     "id, creditNoteId, lineNumber, sourceDocumentId, sourceDocumentType, "
-    "lineType, label, longDescription, quantity, unitCode, "
+    "lineType, articleReference, label, longDescription, quantity, unitCode, "
     "unitPriceHt, discountPercent, discountAmount, "
     "vatRate, facturXVatCategory, totalHt, totalVat, totalTtc, createdAt"
 )

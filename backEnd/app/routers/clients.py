@@ -6,7 +6,8 @@ from app.schemas.vehicle import VehicleResponse
 
 router = APIRouter(prefix="/clients", tags=["clients"])
 
-_COLUMNS = "id, gender, firstName, lastName, phone, email, address, postalCode, city, clientType, vatNumber, siren, vmId"
+_COLUMNS = ("id, gender, firstName, lastName, phone, email, address, postalCode, city, "
+            "clientType, vatNumber, siren, accountNumber, vmId")
 _VALID_SORT = {"lastName", "firstName", "city", "postalCode", "phone", "email"}
 
 
@@ -85,7 +86,7 @@ def create_client(data: ClientCreate, current_user: dict = Depends(get_current_u
     with db_cursor(commit=True) as cur:
         cur.execute(
             """
-            INSERT INTO clients (gender, firstName, lastName, phone, email, address, postalCode, city, clientType, vatNumber, siren, vmId)
+            INSERT INTO clients (gender, firstName, lastName, phone, email, address, postalCode, city, clientType, vatNumber, siren, accountNumber, vmId)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
@@ -100,6 +101,7 @@ def create_client(data: ClientCreate, current_user: dict = Depends(get_current_u
                 data.clientType,
                 data.vatNumber,
                 data.siren,
+                data.accountNumber,
                 data.vmId,
             ),
         )

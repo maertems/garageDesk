@@ -19,7 +19,7 @@ from app.schemas.billing_invoices import (
     InvoiceResponse,
 )
 from app.services.billing_pdf import generate_invoice_pdf
-from app.services.company_logo import fetch_logo
+from app.services.company_logo import fetch_logo, footer_message
 from app.services.invoice_service import issue_invoice
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
@@ -33,7 +33,7 @@ _INV_COLS = (
     "clientType, clientName, clientFirstName, clientLegalName, "
     "clientSiren, clientSiret, clientVatIntracom, "
     "clientAddressLine1, clientAddressLine2, clientPostalCode, clientCity, clientCountryCode, "
-    "clientEmail, clientPhone, "
+    "clientEmail, clientPhone, clientAccountNumber, receptionistName, "
     "vehicleLicensePlate, vehicleVin, vehicleMake, vehicleModel, vehicleKilometrage, "
     "currencyCode, subtotalHt, globalDiscountPercent, globalDiscountAmount, "
     "totalHt, totalVat, totalTtc, vatBreakdownJson, "
@@ -46,7 +46,7 @@ _INV_COLS = (
 
 _LINE_COLS = (
     "id, invoiceId, lineNumber, sourceDocumentId, sourceDocumentType, "
-    "lineType, label, longDescription, quantity, unitCode, "
+    "lineType, articleReference, label, longDescription, quantity, unitCode, "
     "unitPriceHt, discountPercent, discountAmount, "
     "vatRate, facturXVatCategory, totalHt, totalVat, totalTtc, createdAt"
 )
@@ -177,6 +177,10 @@ def get_invoice(invoice_id: int, current_user: dict = Depends(get_current_user))
 def download_invoice_pdf(invoice_id: int, current_user: dict = Depends(get_current_user)):
     inv = _fetch_invoice_or_404(invoice_id)
     lines = _fetch_lines(invoice_id)
+    # Le message de bas de page vient des réglages et non de l'instantané : c'est un
+    # texte commercial, pas une mention contractuelle. Le garage doit pouvoir le
+    # changer sans que les factures déjà émises portent l'ancien.
+    inv = {**inv, "footerMessage": footer_message()}
     pdf_bytes = generate_invoice_pdf(inv, lines, fetch_logo())
     filename = f"{inv['invoiceNumber']}.pdf"
     return Response(

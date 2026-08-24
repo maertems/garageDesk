@@ -582,7 +582,9 @@ def _combien_tiennent(c: canvas.Canvas, y: float, lines: list[dict], plancher: f
 
 def generate_invoice_pdf(inv: dict, lines: list[dict], logo: bytes | None = None) -> bytes:
     """Facture. `inv` porte les champs recopiés à l'émission, `lines` ses lignes."""
-    or_number = _s(inv.get("sourceDocumentNumber"))
+    # `sourceQuoteNumber` : le numéro du devis ou de l'OR dont la facture découle,
+    # que le routeur obtient par jointure sur `documents`.
+    or_number = _s(inv.get("sourceQuoteNumber"))
     message = inv.get("footerMessage")
     pdf, pages = _document(inv, lines, logo, "FACTURE", _s(inv.get("invoiceNumber")),
                            "Total Facture", message, or_number, None)

@@ -21,6 +21,9 @@ class InvoiceLineResponse(CamelModel):
     sourceDocumentId: Optional[int] = None
     sourceDocumentType: Optional[str] = None
     lineType: Optional[str] = None
+    # Référence de l'article, recopiée à l'émission (migration 028). En réponse
+    # seulement : le service la reprend de l'article, elle n'est jamais fournie.
+    articleReference: Optional[str] = None
     label: str
     longDescription: Optional[str] = None
     quantity: float
@@ -98,6 +101,8 @@ class InvoiceResponse(CamelModel):
     clientCountryCode: Optional[str] = None
     clientEmail: Optional[str] = None
     clientPhone: Optional[str] = None
+    clientAccountNumber: Optional[str] = None
+    receptionistName: Optional[str] = None
     # Vehicle snapshot
     vehicleLicensePlate: Optional[str] = None
     vehicleVin: Optional[str] = None
