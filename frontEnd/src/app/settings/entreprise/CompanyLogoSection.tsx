@@ -82,20 +82,17 @@ export default function CompanyLogoSection({ initialHasLogo }: { initialHasLogo:
     <div className="space-y-3">
       <div className="space-y-2 text-xs text-muted-foreground">
         <p>
-          Imprimé dans un cadre fixe, plus grand sur le contrat de prêt que sur les factures :{" "}
-          <strong className="font-medium text-foreground">78 × 30 mm</strong> sur le contrat,{" "}
-          <strong className="font-medium text-foreground">40 × 15 mm</strong> sur la facture et
-          l&apos;avoir, dont 37 × 12 mm utiles. L&apos;image est réduite pour tenir dedans sans
-          jamais être déformée.
+          Imprimé en haut à droite de tous les documents remis au client — facture, avoir,
+          contrat de prêt — dans un cadre de{" "}
+          <strong className="font-medium text-foreground">78 × 30 mm</strong>. L&apos;image est
+          réduite pour tenir dedans sans jamais être déformée.
         </p>
         <p>
           Taille conseillée :{" "}
           <strong className="font-medium text-foreground">920 × 355 pixels</strong> pour un logo
-          allongé — soit 300 dpi sur le plus grand des deux cadres, la finesse attendue à
-          l&apos;impression. C&apos;est celui du contrat qui commande : un fichier calibré pour la
-          facture y sortirait deux fois trop grossier. Un logo carré n&apos;occupera que 30 × 30 mm,
-          donc 355 × 355 pixels suffisent ; un format allongé horizontalement exploite mieux le
-          cadre.
+          allongé — soit 300 dpi sur le cadre, la finesse attendue à l&apos;impression. Un logo
+          carré n&apos;occupera que 30 × 30 mm, donc 355 × 355 pixels suffisent ; un format allongé
+          horizontalement exploite mieux le cadre.
         </p>
         <p>
           Plus grand ne nuit pas, le fichier est seulement plus lourd ; plus petit sortira
@@ -108,10 +105,9 @@ export default function CompanyLogoSection({ initialHasLogo }: { initialHasLogo:
       <div className="flex items-center gap-4">
         <div className="flex h-[57px] w-[151px] shrink-0 items-center justify-center rounded-md border bg-secondary/30">
           {hasLogo ? (
-            // Proportions du cadre du PDF à l'échelle, pour montrer l'encombrement
-            // réel plutôt qu'un aperçu trompeur. Un seul aperçu suffit pour les deux
-            // cadres : 40/15 = 2,67 et 78/30 = 2,60, soit 3 % d'écart de rapport —
-            // ce qui tient dans l'un tient dans l'autre.
+            // Proportions du cadre du PDF à l'échelle (78 × 30 mm, rapport 2,60),
+            // pour montrer l'encombrement réel plutôt qu'un aperçu trompeur. Tous les
+            // documents emploient désormais ce cadre unique.
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={`/api/proxy/companySettings/logo?v=${version}`}

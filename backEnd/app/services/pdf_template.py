@@ -14,9 +14,9 @@ La référence est composée en Arimo, clone métrique d'Arial ; Arial partage s
 largeurs avec Helvetica, si bien que les mesures se transposent sans embarquer de
 fonte dans le PDF.
 
-Pourquoi ici et non dans billing_pdf : celui-ci porte encore l'habillage d'origine
-de l'application — bandeaux bleus, aplats gris — et les deux ne doivent pas se
-mélanger le temps de la transition.
+Pourquoi un module à part : ces primitives n'appartiennent à aucun document. Les
+loger dans l'un d'eux ferait des autres ses tributaires, et le premier qui aurait
+besoin d'une variante la prendrait en copie.
 """
 
 import io
@@ -117,13 +117,20 @@ def fit(c: canvas.Canvas, texte: str, police: str, corps: float, largeur: float)
 def cell_row(
     c: canvas.Canvas, y_top: float, cols: list[float], valeurs: list[str],
     gras: bool = False, aligns: list[str] | None = None, h: float = ROW_H,
+    pad: float | None = None,
 ) -> float:
     """Une ligne de cellules réglées. Retourne son bas.
 
     Trace la règle du haut, les filets verticaux et le texte ; la règle du bas est
     laissée à l'appelant, qui sait s'il enchaîne une autre ligne ou s'il ferme le
     tableau — deux règles superposées épaississent le trait à l'impression.
+
+    `pad` resserre la marge intérieure des cellules. Les 3 mm par défaut coûtent
+    6 mm par colonne : sur une bande de huit, cela fait 48 mm de la largeur utile, et
+    un numéro de série de dix-sept caractères ne rentre plus. La référence resserre
+    de la même façon ses bandes denses.
     """
+    marge = PAD if pad is None else pad
     y_bot = y_top - h
     rule(c, y_top)
 
@@ -141,27 +148,27 @@ def cell_row(
     x = FRAME
     for i, (valeur, w) in enumerate(zip(valeurs, cols)):
         align = (aligns[i] if aligns else "left")
-        texte = fit(c, valeur, police, FS_BODY, w - 2 * PAD)
+        texte = fit(c, valeur, police, FS_BODY, w - 2 * marge)
         if align == "right":
-            c.drawRightString(x + w - PAD, y_bot + 1.9 * mm, texte)
+            c.drawRightString(x + w - marge, y_bot + 1.9 * mm, texte)
         elif align == "center":
             c.drawCentredString(x + w / 2, y_bot + 1.9 * mm, texte)
         else:
-            c.drawString(x + PAD, y_bot + 1.9 * mm, texte)
+            c.drawString(x + marge, y_bot + 1.9 * mm, texte)
         x += w
     return y_bot
 
 
 def cell_table(
     c: canvas.Canvas, y_top: float, headers: list[str], valeurs: list[str],
-    cols: list[float], aligns: list[str] | None = None,
+    cols: list[float], aligns: list[str] | None = None, pad: float | None = None,
 ) -> float:
     """Tableau à deux lignes : en-têtes en gras, puis valeurs. Retourne son bas.
 
     C'est la forme qu'emploie la référence pour identifier le véhicule.
     """
-    y = cell_row(c, y_top, cols, headers, gras=True, aligns=aligns)
-    y = cell_row(c, y, cols, valeurs, aligns=aligns)
+    y = cell_row(c, y_top, cols, headers, gras=True, aligns=aligns, pad=pad)
+    y = cell_row(c, y, cols, valeurs, aligns=aligns, pad=pad)
     rule(c, y)
     return y
 
