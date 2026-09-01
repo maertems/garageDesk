@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { format, addMinutes, parseISO, differenceInMinutes } from "date-fns";
-import { Plus, Trash2, Loader2, FileText } from "lucide-react";
+import { AlertTriangle, FileText, Loader2, Plus, Trash2 } from "lucide-react";
 import { getLabel, appointmentCategoryLabels, appointmentStatusLabels } from "@/lib/labels";
 import {
   Dialog,
@@ -119,11 +119,13 @@ export default function AppointmentForm({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
-  // Avertissement rendu par l'API quand le rendez-vous est bien enregistré mais que
-  // la notification n'est pas partie. Le formulaire reste alors ouvert : fermé
-  // aussitôt, le message ne serait jamais lu — il n'y a pas de bandeau global dans
-  // l'application pour le porter.
-  const [notice, setNotice] = useState("");
+  // Avertissements rendus par l'API quand le rendez-vous est enregistré mais que la
+  // notification n'est pas partie. Affichés dans un dialogue centré, par-dessus le
+  // formulaire : c'est le seul endroit où le message sera lu à coup sûr, l'application
+  // n'ayant aucun bandeau global pour le porter.
+  //
+  // Cet état existait déjà, pour un contrôle AVANT enregistrement qui n'a jamais été
+  // branché — le dialogue était du code mort. Il sert maintenant à l'après.
   const [notificationWarnings, setNotificationWarnings] = useState<string[] | null>(null);
   const [showClientModal, setShowClientModal] = useState(false);
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
@@ -337,7 +339,7 @@ export default function AppointmentForm({
     }
     const saved = await res.json().catch(() => ({}));
     if (saved?.notificationWarning) {
-      setNotice(String(saved.notificationWarning));
+      setNotificationWarnings([String(saved.notificationWarning)]);
       return;
     }
     onSaved();
@@ -856,26 +858,9 @@ export default function AppointmentForm({
                 {error}
               </div>
             )}
-
-            {notice && (
-              <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm dark:border-amber-800 dark:bg-amber-950/40">
-                <p className="font-medium text-foreground">Rendez-vous enregistré.</p>
-                <p className="mt-1 text-muted-foreground">{notice}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Le rendez-vous est bien créé : seule la notification au client a
-                  échoué. Le détail est consultable dans Administration → Journaux.
-                </p>
-              </div>
-            )}
           </form>
 
           <DialogFooter className="gap-2">
-            {notice ? (
-              <Button type="button" onClick={onSaved} className="ml-auto">
-                Fermer
-              </Button>
-            ) : (
-            <>
             {editingId && (
               <Button
                 type="button"
@@ -895,41 +880,49 @@ export default function AppointmentForm({
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
               {editingId ? "Enregistrer" : "Créer"}
             </Button>
-            </>
-            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Notification warnings dialog */}
+      {/* Issue de la notification, après enregistrement. Fermer le dialogue ferme
+          aussi le formulaire : le rendez-vous est créé, il n'y a plus rien à y faire. */}
       {notificationWarnings && notificationWarnings.length > 0 && (
-        <Dialog open onOpenChange={(o) => !o && setNotificationWarnings(null)}>
+        <Dialog
+          open
+          onOpenChange={(o) => {
+            if (!o) {
+              setNotificationWarnings(null);
+              onSaved();
+            }
+          }}
+        >
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Notification(s) non envoyée(s)</DialogTitle>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
+                Notification non envoyée
+              </DialogTitle>
             </DialogHeader>
-            <div className="px-6 py-4 space-y-3">
-              <ul className="list-disc pl-5 text-sm space-y-1">
+            <div className="space-y-3 px-6 py-4">
+              <p className="text-sm font-medium">Le rendez-vous est bien enregistré.</p>
+              <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
                 {notificationWarnings.map((w, i) => (
                   <li key={i}>{w}</li>
                 ))}
               </ul>
-              <p className="text-sm text-muted-foreground">
-                Souhaitez-vous quand même enregistrer le rendez-vous ?
+              <p className="text-xs text-muted-foreground">
+                Seule la notification au client a échoué. Le détail est conservé dans
+                Administration → Journaux.
               </p>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setNotificationWarnings(null)}>
-                Annuler
-              </Button>
               <Button
                 onClick={() => {
                   setNotificationWarnings(null);
-                  setSaving(true);
-                  doSubmit();
+                  onSaved();
                 }}
               >
-                Enregistrer quand même
+                J&apos;ai compris
               </Button>
             </DialogFooter>
           </DialogContent>
