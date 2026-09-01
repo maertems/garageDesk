@@ -156,19 +156,32 @@ def _send_to_endpoint(base_url: str, destinataire: str, message: str) -> tuple[b
     return (False, str(last_exc))
 
 
-def send_notification_on_create(appointment_id: int, triggered_by: str | None = None) -> None:
+def send_notification_on_create(appointment_id: int, triggered_by: str | None = None) -> dict:
     """
     Envoie les notifications « création de RDV » pour un rendez-vous client.
     Appelé après création du RDV si notificationOnCreate est activé.
+
+    Retourne un compte rendu que la route joint à sa réponse, pour que l'interface
+    puisse AVERTIR quand rien n'est parti. Auparavant cette fonction rendait `None`
+    et un échec était totalement muet — y compris le cas le plus courant, celui où
+    aucun canal n'est configuré.
+
+    Forme du compte rendu :
+      {"sent": 2, "failed": 0, "skipped": 0, "message": None}
+    `message` est une phrase prête à afficher, non nulle SEULEMENT s'il y a lieu
+    d'avertir. Le rendez-vous, lui, est créé dans tous les cas.
     """
     settings = get_notification_settings()
     if not settings["notificationOnCreate"]:
         logger.warning("Notification création RDV %s: désactivée (paramètre notificationOnCreate)", appointment_id)
-        return
+        return {"sent": 0, "failed": 0, "skipped": 0, "message": None}
     endpoints = get_endpoints()
     if not endpoints:
         logger.warning("Notification création RDV %s: aucun canal d'envoi configuré (Admin > Notifications)", appointment_id)
-        return
+        return {
+            "sent": 0, "failed": 0, "skipped": 0,
+            "message": "Aucun canal de notification configuré (Administration → Notifications).",
+        }
     logger.warning("Notification création: RDV id=%s, envoi vers %s canal(aux)", appointment_id, len(endpoints))
     with db_cursor() as cur:
         cur.execute(
@@ -186,7 +199,7 @@ def send_notification_on_create(appointment_id: int, triggered_by: str | None = 
         row = cur.fetchone()
     if not row or row["appointmentType"] != "client":
         logger.warning("Notification création RDV %s: RDV non client ou introuvable", appointment_id)
-        return
+        return {"sent": 0, "failed": 0, "skipped": 0, "message": None}
     template = settings["notificationMessageOnCreate"] or DEFAULT_MESSAGE_CREATE
     context = build_message_context(
         first_name=row.get("firstName"),
@@ -200,6 +213,9 @@ def send_notification_on_create(appointment_id: int, triggered_by: str | None = 
     email_val = (row.get("email") or row.get("Email") or "").strip()
     phone_val = (row.get("phone") or row.get("Phone") or "").strip()
     client_id = row.get("clientId")
+    envoyes = 0
+    echecs: list[str] = []
+    ignores: list[str] = []
     for ep in endpoints:
         ep_type = ep["type"]
         base_url = ep["baseUrl"]
@@ -208,12 +224,31 @@ def send_notification_on_create(appointment_id: int, triggered_by: str | None = 
         else:
             destinataire = phone_val
         if not destinataire:
+            manque = "email" if ep_type == "email" else "téléphone"
             logger.warning(
                 "Notification création RDV %s: canal %s ignoré (client sans %s)",
-                appointment_id, ep_type, "email" if ep_type == "email" else "téléphone"
+                appointment_id, ep_type, manque
+            )
+            ignores.append(f"{ep_type} (client sans {manque})")
+            # Consigné aussi : un canal sauté faute de coordonnées est la cause la
+            # plus fréquente d'une notification qui « ne marche pas », et elle ne
+            # laissait aucune trace consultable.
+            log_notification(
+                triggered_by=triggered_by or "system",
+                client_id=client_id,
+                recipient=None,
+                notification_type="onCreate",
+                endpoint_type=ep_type,
+                success=False,
+                error_message=f"client sans {manque}",
+                appointment_id=appointment_id,
             )
             continue
         success, error = _send_to_endpoint(base_url, destinataire, message)
+        if success:
+            envoyes += 1
+        else:
+            echecs.append(f"{ep_type} : {error}")
         log_notification(
             triggered_by=triggered_by or "system",
             client_id=client_id,
@@ -222,7 +257,21 @@ def send_notification_on_create(appointment_id: int, triggered_by: str | None = 
             endpoint_type=ep_type,
             success=success,
             error_message=error,
+            appointment_id=appointment_id,
         )
+
+    # Le message n'existe que s'il y a lieu d'avertir. Un envoi partiellement réussi
+    # en produit un aussi : deux canaux configurés dont un muet, c'est une moitié de
+    # client prévenu, et l'utilisateur doit le savoir.
+    message_ui = None
+    if echecs:
+        message_ui = "Notification non envoyée — " + " ; ".join(echecs)
+    elif ignores and envoyes == 0:
+        message_ui = "Notification non envoyée — " + " ; ".join(ignores)
+    elif ignores:
+        message_ui = "Notification partiellement envoyée — " + " ; ".join(ignores)
+
+    return {"sent": envoyes, "failed": len(echecs), "skipped": len(ignores), "message": message_ui}
 
 
 def get_appointments_for_reminder() -> list[dict]:

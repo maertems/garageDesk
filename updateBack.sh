@@ -41,7 +41,16 @@ fi
 sudo docker stop gd-backend 2>/dev/null
 sudo docker rm gd-backend 2>/dev/null
 
+# Les journaux sont montés sur l'hôte : sans volume, ils vivent dans le conteneur et
+# le `docker rm` ci-dessus les emporte à chaque déploiement. Or la page
+# Administration → Journaux les donne à lire, et un historique qui repart de zéro à
+# chaque mise à jour ne sert à rien. Les notifications et la synchronisation, elles,
+# sont en base et ne dépendent pas de ce montage.
+LOGS_HOST_DIR="${LOGS_HOST_DIR:-$SCRIPT_DIR/logs}"
+mkdir -p "$LOGS_HOST_DIR"
+
 sudo docker run -d -p "${BACKEND_PORT}:80" \
+  -v "$LOGS_HOST_DIR:/app/logs" \
   -e MYSQL_HOST="$MYSQL_HOST" \
   -e MYSQL_USER="$MYSQL_USER" \
   -e MYSQL_PASSWORD="$MYSQL_PASSWORD" \

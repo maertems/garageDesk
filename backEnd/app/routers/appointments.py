@@ -164,14 +164,19 @@ def create_appointment(data: AppointmentCreate, current_user: dict = Depends(get
         )
         row = cur.fetchone()
     # Notification à la création si activée (RDV client) et si l'utilisateur l'a demandé
+    avertissement = None
     if (data.appointmentType or "client") == "client" and data.clientId and data.smsReminder:
         log = logging.getLogger(__name__)
         log.warning("Notification: tentative envoi à la création pour RDV id=%s (clientId=%s)", aid, data.clientId)
         try:
-            send_notification_on_create(aid)
+            resultat = send_notification_on_create(aid)
+            avertissement = (resultat or {}).get("message")
         except Exception as e:
+            # L'exception ne fait plus disparaître l'information : le rendez-vous est
+            # créé, et l'utilisateur apprend que la notification a échoué.
             log.warning("Notification à la création (RDV %s): erreur %s", aid, e)
-    return AppointmentResponse(**row)
+            avertissement = f"Notification non envoyée — erreur interne : {e}"
+    return AppointmentResponse(**row, notificationWarning=avertissement)
 
 
 def _value_for_db(v):

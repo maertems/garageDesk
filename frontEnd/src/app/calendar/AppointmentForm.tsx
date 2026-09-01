@@ -119,6 +119,11 @@ export default function AppointmentForm({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
+  // Avertissement rendu par l'API quand le rendez-vous est bien enregistré mais que
+  // la notification n'est pas partie. Le formulaire reste alors ouvert : fermé
+  // aussitôt, le message ne serait jamais lu — il n'y a pas de bandeau global dans
+  // l'application pour le porter.
+  const [notice, setNotice] = useState("");
   const [notificationWarnings, setNotificationWarnings] = useState<string[] | null>(null);
   const [showClientModal, setShowClientModal] = useState(false);
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
@@ -328,6 +333,11 @@ export default function AppointmentForm({
       const data = await res.json().catch(() => ({}));
       const message = data.detail?.message ?? data.message ?? "Erreur lors de l'enregistrement";
       setError(message);
+      return;
+    }
+    const saved = await res.json().catch(() => ({}));
+    if (saved?.notificationWarning) {
+      setNotice(String(saved.notificationWarning));
       return;
     }
     onSaved();
@@ -846,9 +856,26 @@ export default function AppointmentForm({
                 {error}
               </div>
             )}
+
+            {notice && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm dark:border-amber-800 dark:bg-amber-950/40">
+                <p className="font-medium text-foreground">Rendez-vous enregistré.</p>
+                <p className="mt-1 text-muted-foreground">{notice}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Le rendez-vous est bien créé : seule la notification au client a
+                  échoué. Le détail est consultable dans Administration → Journaux.
+                </p>
+              </div>
+            )}
           </form>
 
           <DialogFooter className="gap-2">
+            {notice ? (
+              <Button type="button" onClick={onSaved} className="ml-auto">
+                Fermer
+              </Button>
+            ) : (
+            <>
             {editingId && (
               <Button
                 type="button"
@@ -868,6 +895,8 @@ export default function AppointmentForm({
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
               {editingId ? "Enregistrer" : "Créer"}
             </Button>
+            </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

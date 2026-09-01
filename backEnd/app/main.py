@@ -27,6 +27,7 @@ from app.routers import (
     time_case_categories,
     workshop,
     workshop_planning,
+    logs,
     synchronization,
     # billing module (Vague 0 skeletons; endpoints filled in their lots)
     vat_rates,
@@ -138,6 +139,7 @@ app.include_router(time_cases.router, prefix="/api/v1")
 app.include_router(time_case_categories.router, prefix="/api/v1")
 app.include_router(workshop.router, prefix="/api/v1")
 app.include_router(workshop_planning.router, prefix="/api/v1")
+app.include_router(logs.router, prefix="/api/v1")
 app.include_router(synchronization.router, prefix="/api/v1")
 # billing module
 app.include_router(vat_rates.router, prefix="/api/v1")

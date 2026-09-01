@@ -86,7 +86,22 @@ def log_notification(
     endpoint_type: str | None,
     success: bool,
     error_message: str | None = None,
+    appointment_id: int | None = None,
 ) -> None:
+    """Consigne une tentative d'envoi, dans le fichier ET dans auditEvents.
+
+    Le fichier reste écrit pour le débogage immédiat, mais il vit dans le conteneur
+    et disparaît à chaque déploiement : c'est la table qui porte l'historique
+    consultable, et elle part avec les sauvegardes vers l'instance de secours.
+
+    `auditEvents` plutôt qu'une table dédiée : elle existe, elle est en insertion
+    seule, et son `payloadJson` accueille sans façon le destinataire, le canal et le
+    message rendu par la passerelle.
+
+    L'écriture en base ne doit jamais faire échouer un envoi qui a réussi, ni
+    empêcher la création du rendez-vous : elle est donc enveloppée, et son échec ne
+    laisse que le fichier.
+    """
     _init_loggers()
     entry = {
         "ts": _now_iso(),
@@ -99,3 +114,46 @@ def log_notification(
         "error": error_message,
     }
     notification_logger.info(json.dumps(entry, default=str, ensure_ascii=False))
+
+    try:
+        from app.database import db_cursor
+        from app.services.audit_service import log_event
+
+        with db_cursor(commit=True) as cur:
+            log_event(
+                cur,
+                event_type="notificationSent" if success else "notificationFailed",
+                entity_type="appointment",
+                entity_id=appointment_id,
+                payload={
+                    "clientId": client_id,
+                    # Destinataire tronqué : un journal consultable dans l'application
+                    # n'a pas besoin du numéro complet pour dire à qui l'envoi était
+                    # destiné, et il sera lu par d'autres que son destinataire.
+                    "recipient": _masquer(recipient),
+                    "endpoint": endpoint_type,
+                    "type": notification_type,
+                    "triggeredBy": triggered_by or "system",
+                    "error": error_message,
+                },
+            )
+    except Exception:
+        # Base injoignable : le fichier a déjà la trace, et un envoi réussi ne doit
+        # pas être rapporté comme un échec pour autant.
+        pass
+
+
+def _masquer(destinataire: str | None) -> str | None:
+    """Garde de quoi reconnaître le destinataire sans l'exposer en entier.
+
+    « 0611500721 » → « 061*****21 », « a.duverger@example.net » → « a.d***@example.net ».
+    """
+    if not destinataire:
+        return destinataire
+    if "@" in destinataire:
+        locale, _, domaine = destinataire.partition("@")
+        visible = locale[:3]
+        return f"{visible}{'*' * max(1, len(locale) - 3)}@{domaine}"
+    if len(destinataire) <= 5:
+        return destinataire
+    return f"{destinataire[:3]}{'*' * (len(destinataire) - 5)}{destinataire[-2:]}"

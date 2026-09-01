@@ -48,6 +48,10 @@ class AppointmentUpdate(CamelModel):
 
 class AppointmentResponse(AppointmentBase):
     id: int
+    # Avertissement à afficher quand la notification de création n'est pas partie.
+    # Absent le reste du temps. Le rendez-vous est créé dans tous les cas : un RDV
+    # perdu parce qu'un SMS n'est pas parti serait un remède pire que le mal.
+    notificationWarning: Optional[str] = None
 
 
 class AppointmentWithJoinsResponse(CamelModel):

@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Bell, KeyRound, Settings as SettingsIcon, UsersRound } from "lucide-react";
+import { Bell, KeyRound, ScrollText, Settings as SettingsIcon, UsersRound } from "lucide-react";
 import { apiJson } from "@/lib/api";
 import { PageHeader, PageBody } from "@/components/layout/PageHeader";
 
@@ -23,6 +23,12 @@ const adminLinks = [
     title: "Notifications",
     description: "Email, SMS, templates et rappels",
     icon: Bell,
+  },
+  {
+    href: "/admin/logs",
+    title: "Journaux",
+    description: "Notifications, synchronisation et actions",
+    icon: ScrollText,
   },
   {
     href: "/settings",

@@ -52,6 +52,11 @@ productivite/
 #
 # Le contenu de backup/data est ignoré mais le répertoire est conservé, via un
 # .gitkeep explicitement excepté : les scripts s'attendent à le trouver.
+# Journaux du backend, montés depuis le conteneur par updateBack.sh. Ils portent des
+# adresses IP, des identifiants d'utilisateur et des destinataires de notification :
+# rien à faire dans un dépôt public.
+logs/
+
 backup/data/*
 !backup/data/.gitkeep
 
