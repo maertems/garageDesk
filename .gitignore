@@ -55,7 +55,12 @@ productivite/
 # Journaux du backend, montés depuis le conteneur par updateBack.sh. Ils portent des
 # adresses IP, des identifiants d'utilisateur et des destinataires de notification :
 # rien à faire dans un dépôt public.
-logs/
+#
+# ANCRÉ À LA RACINE (barre oblique initiale) : sans elle, le motif s'applique à tout
+# répertoire nommé « logs » à n'importe quelle profondeur, et il avait emporté
+# frontEnd/src/app/admin/logs/ — la page des journaux n'était pas commitée, d'où un
+# 404. Même piège que `.env`, qui est volontairement non ancré, lui.
+/logs/
 
 backup/data/*
 !backup/data/.gitkeep
