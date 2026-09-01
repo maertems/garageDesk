@@ -177,8 +177,12 @@ def _parse_date(s) -> Optional[date]:
 
 # Champs qu'un rapprochement peut compléter côté client. `vmId` en tête : c'est
 # l'ancrage, et sans lui le rapprochement se rejouerait à chaque envoi.
+# `accountNumber` n'y figure PAS : le numéro de compte arrive bien sur l'en-tête de
+# facture (`bills.account`), mais rien n'établit qu'il désigne la même chose que le
+# compte comptable du client. Le remonter écrirait peut-être une valeur fausse sur la
+# fiche. Il reste saisi à la main sur la fiche client (§ 74).
 _CLIENT_FILLABLE = [
-    "vmId", "accountNumber", "gender", "firstName", "lastName",
+    "vmId", "gender", "firstName", "lastName",
     "phone", "email", "address", "postalCode", "city",
     "vatNumber", "siren",
 ]
@@ -217,7 +221,7 @@ def _completer(cur, table: str, entity_id: int, entrant: dict, local: dict,
     return a_completer
 
 
-def _resolve_customer(cur, customer: UpsertCustomerInput, account=None) -> tuple[int, str]:
+def _resolve_customer(cur, customer: UpsertCustomerInput) -> tuple[int, str]:
     """Rapproche le client poussé d'un client existant, ou le crée.
 
     Trois chemins, dans cet ordre :
@@ -234,7 +238,6 @@ def _resolve_customer(cur, customer: UpsertCustomerInput, account=None) -> tuple
     """
     entrant = {
         "vmId": customer.vm_id,
-        "accountNumber": str(account) if account is not None else None,
         "gender": customer.gender,
         "firstName": customer.first_name,
         "lastName": customer.last_name,
@@ -269,9 +272,11 @@ def _resolve_customer(cur, customer: UpsertCustomerInput, account=None) -> tuple
     if trouve and score >= MATCH:
         _completer(cur, "clients", trouve["id"], entrant, trouve, _CLIENT_FILLABLE, score)
         return trouve["id"], "matched"
+    meilleur_score_ecarte = score
 
     cur.execute(
-        "INSERT INTO clients (gender, firstName, lastName, phone, email, address, postalCode, city, clientType, vatNumber, siren, vmId) "
+        "INSERT INTO clients (gender, firstName, lastName, phone, email, address, postalCode, city, "
+        "clientType, vatNumber, siren, vmId) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             customer.gender, customer.first_name, customer.last_name,
@@ -284,10 +289,27 @@ def _resolve_customer(cur, customer: UpsertCustomerInput, account=None) -> tuple
     )
     client_id = cur.lastrowid
     cur.execute("INSERT INTO synchronization (`key`, `value`) VALUES ('newClient', %s)", (str(client_id),))
+    # Trace de création : c'est elle qui permet de repérer un doublon dans le rapport.
+    # Le score du meilleur candidat écarté y figure — c'est l'information qui dit si
+    # on est passé près d'un rapprochement, donc si le seuil mérite d'être revu.
+    log_event(
+        cur,
+        event_type="syncCreated",
+        entity_type="client",
+        entity_id=client_id,
+        payload={
+            "lastName": customer.last_name,
+            "firstName": customer.first_name,
+            "city": customer.city,
+            "vmId": customer.vm_id,
+            "bestRejectedScore": round(meilleur_score_ecarte, 3),
+        },
+    )
     return client_id, "created"
 
 
-def _insert_vehicle(cur, client_id: int, car: UpsertCarInput, vroomly: dict) -> int:
+def _insert_vehicle(cur, client_id: int, car: UpsertCarInput, vroomly: dict,
+                    rejected_score: float | None = None) -> int:
     if vroomly.get("found"):
         brand = vroomly.get("brand") or car.brand
         model = vroomly.get("model") or car.model
@@ -312,6 +334,19 @@ def _insert_vehicle(cur, client_id: int, car: UpsertCarInput, vroomly: dict) -> 
     )
     vehicle_id = cur.lastrowid
     cur.execute("INSERT INTO synchronization (`key`, `value`) VALUES ('newVehicle', %s)", (str(vehicle_id),))
+    log_event(
+        cur,
+        event_type="syncCreated",
+        entity_type="vehicle",
+        entity_id=vehicle_id,
+        payload={
+            "licensePlate": car.license_plate,
+            "brand": brand,
+            "vmId": car.vm_id,
+            "clientId": client_id,
+            "bestRejectedScore": round(rejected_score, 3) if rejected_score is not None else None,
+        },
+    )
     return vehicle_id
 
 
@@ -354,8 +389,9 @@ def _resolve_vehicle(cur, client_id: int, car: UpsertCarInput) -> tuple[Optional
     if not car.license_plate:
         # Sans immatriculation, aucun rapprochement n'est défendable : la marque seule
         # ne distingue rien. On crée, quitte à faire un doublon visible.
-        vroomly = {}
-        return _insert_vehicle(cur, client_id, car, vroomly), "created"
+        # Sans immatriculation, aucun candidat n'a même été évalué : le score
+        # écarté n'existe pas, et le rapport le montrera comme tel.
+        return _insert_vehicle(cur, client_id, car, {}, None), "created"
 
     # D'abord les véhicules de ce client, puis les autres sans ancrage.
     cur.execute(
@@ -378,7 +414,7 @@ def _resolve_vehicle(cur, client_id: int, car: UpsertCarInput) -> tuple[Optional
     # Création : c'est le seul cas où l'on interroge Vroomly, un appel réseau qui n'a
     # pas de raison d'être quand on vient de retrouver le véhicule chez nous.
     vroomly = lookup_plate(car.license_plate)
-    return _insert_vehicle(cur, client_id, car, vroomly), "created"
+    return _insert_vehicle(cur, client_id, car, vroomly, score), "created"
 
 
 def _sync_details(bill_id: int, detail_inputs: list, price_t1: float) -> DetailsSyncResult:
@@ -455,21 +491,52 @@ def _sync_details(bill_id: int, detail_inputs: list, price_t1: float) -> Details
 
 @router.post("/upsert", response_model=UpsertBillResponse)
 def upsert_bill(payload: UpsertBillPayload, current_user: dict = Depends(get_current_user)):
+    """Reçoit une facture du script extérieur : client, véhicule, facture, lignes.
+
+    Le corps est enrobé d'un garde qui journalise l'échec. La trace est écrite sur
+    une connexion NEUVE, volontairement : celle de l'opération fautive est en cours
+    d'annulation, et une trace posée dedans serait annulée avec elle — l'erreur
+    resterait alors invisible, ce qui est exactement ce qu'on cherche à éviter.
+    """
+    try:
+        return _upsert_bill(payload, current_user)
+    except Exception as exc:
+        try:
+            with db_cursor(commit=True) as cur:
+                log_event(
+                    cur,
+                    event_type="syncFailed",
+                    entity_type="bill",
+                    entity_id=getattr(payload.header.bill, "bill_id", None),
+                    user_id=current_user.get("id"),
+                    payload={
+                        "error": f"{type(exc).__name__}: {exc}"[:800],
+                        # De quoi retrouver l'envoi côté script sans conserver
+                        # toute la charge, qui peut être volumineuse.
+                        "billId": getattr(payload.header.bill, "bill_id", None),
+                        "docNum": getattr(payload.header.bill, "doc_num", None),
+                        "licensePlate": getattr(payload.header.car, "license_plate", None),
+                        "lastName": getattr(payload.header.customer, "last_name", None),
+                        "detailCount": len(payload.detail),
+                    },
+                )
+        except Exception:
+            # La trace ne doit jamais masquer l'erreur d'origine : si même elle
+            # échoue — base injoignable, par exemple —, on laisse remonter la vraie.
+            pass
+        raise
+
+
+def _upsert_bill(payload: UpsertBillPayload, current_user: dict) -> UpsertBillResponse:
     # T-price multipliers for timeEquivalentT1
     with db_cursor() as cur:
         price_t1, _t2, _t3 = _get_t_prices(cur)
 
-    # Le numéro de compte arrive sur l'en-tête de la facture et non sur le client :
-    # il est lu ici pour que le rapprochement puisse en garnir `clients.accountNumber`,
-    # où rien ne le portait jusqu'alors.
     hbill = payload.header.bill
-    account_pour_client = hbill.account
 
     # Resolve / match / create customer
     with db_cursor(commit=True) as cur:
-        client_id, client_action = _resolve_customer(
-            cur, payload.header.customer, account=account_pour_client
-        )
+        client_id, client_action = _resolve_customer(cur, payload.header.customer)
 
     # Resolve / match / create vehicle
     vehicle_id: Optional[int] = None

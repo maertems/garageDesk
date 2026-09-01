@@ -89,7 +89,13 @@ class UpsertBillPayload(CamelModel):
 
 
 class EntityActionResult(CamelModel):
-    action: str  # "found" | "created" | "skipped"
+    # Quatre valeurs, et la distinction compte pour le script appelant :
+    #   found    — retrouvé par son vmId, l'ancrage existait déjà
+    #   matched  — rapproché par score et FUSIONNÉ : il portait nos données, il porte
+    #              désormais aussi le vmId
+    #   created  — aucun candidat convaincant, enregistrement neuf
+    #   skipped  — rien n'a été tenté (aucun véhicule dans la charge)
+    action: str
     id: Optional[int] = None
 
 
