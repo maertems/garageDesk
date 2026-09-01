@@ -12,6 +12,14 @@ from app.schemas.bill_upsert import (
     EntityActionResult, DetailsSyncResult,
 )
 from app.services.vroomly import lookup_plate
+from app.services.audit_service import log_event
+from app.services.matching import (
+    MATCH,
+    best_match,
+    champs_a_completer,
+    score_client,
+    score_vehicle,
+)
 
 router = APIRouter(prefix="/bills", tags=["bills"])
 
@@ -167,34 +175,100 @@ def _parse_date(s) -> Optional[date]:
         return None
 
 
-def _resolve_customer(cur, customer: UpsertCustomerInput) -> tuple[int, str]:
+# Champs qu'un rapprochement peut compléter côté client. `vmId` en tête : c'est
+# l'ancrage, et sans lui le rapprochement se rejouerait à chaque envoi.
+_CLIENT_FILLABLE = [
+    "vmId", "accountNumber", "gender", "firstName", "lastName",
+    "phone", "email", "address", "postalCode", "city",
+    "vatNumber", "siren",
+]
+
+# Champs qu'un rapprochement peut compléter côté véhicule. Ni `brand` ni `model` :
+# décision du garage, nos informations sont réputées plus fiables que celles du
+# script, et une immatriculation identique avec une autre marque est presque
+# toujours une donnée fausse en face.
+_VEHICLE_FILLABLE = ["vmId", "vin", "type", "registrationDate"]
+
+
+def _completer(cur, table: str, entity_id: int, entrant: dict, local: dict,
+               champs: list[str], score: float, user_id=None) -> dict:
+    """Remplit les champs vides de l'enregistrement local. Ne remplace jamais.
+
+    Retourne ce qui a été écrit, et le consigne dans auditEvents : un rapprochement
+    automatique doit rester explicable après coup, d'autant qu'il est irréversible en
+    pratique — une fois le `vmId` posé, le chemin rapide s'applique.
+    """
+    a_completer = champs_a_completer(entrant, local, champs)
+    if not a_completer:
+        return {}
+    set_clause = ", ".join(f"`{k}` = %s" for k in a_completer)
+    cur.execute(
+        f"UPDATE {table} SET {set_clause} WHERE id = %s",
+        list(a_completer.values()) + [entity_id],
+    )
+    log_event(
+        cur,
+        event_type="syncMatched",
+        entity_type="client" if table == "clients" else "vehicle",
+        entity_id=entity_id,
+        user_id=user_id,
+        payload={"score": round(score, 3), "completed": a_completer},
+    )
+    return a_completer
+
+
+def _resolve_customer(cur, customer: UpsertCustomerInput, account=None) -> tuple[int, str]:
+    """Rapproche le client poussé d'un client existant, ou le crée.
+
+    Trois chemins, dans cet ordre :
+
+      1. `vmId` connu — l'ancrage, décisif ;
+      2. sinon, rapprochement PAR SCORE sur les clients que nous avons créés
+         nous-mêmes (`vmId IS NULL`), sur nom, prénom et ville normalisés ;
+      3. sinon, création.
+
+    Le rapprochement complète les champs vides dans les deux premiers cas — c'est
+    précisément ce que l'ancienne version ne faisait pas : elle rendait l'identifiant
+    sans jamais poser le `vmId`, si bien que le même client était re-rapproché à
+    chaque envoi et que l'autre système n'obtenait jamais sa clé.
+    """
+    entrant = {
+        "vmId": customer.vm_id,
+        "accountNumber": str(account) if account is not None else None,
+        "gender": customer.gender,
+        "firstName": customer.first_name,
+        "lastName": customer.last_name,
+        "phone": str(customer.phone) if customer.phone is not None else None,
+        "email": customer.email,
+        "address": customer.address,
+        "postalCode": str(customer.postal_code) if customer.postal_code is not None else None,
+        "city": customer.city,
+        "vatNumber": customer.vat_number,
+        "siren": customer.siren,
+    }
+    colonnes = ", ".join(["id"] + [f"`{c}`" for c in _CLIENT_FILLABLE])
+
     if customer.vm_id:
         cur.execute(
-            "SELECT id FROM clients WHERE vmId = %s ORDER BY id DESC LIMIT 1",
+            f"SELECT {colonnes} FROM clients WHERE vmId = %s ORDER BY id LIMIT 1",
             (customer.vm_id,),
         )
         row = cur.fetchone()
         if row:
+            _completer(cur, "clients", row["id"], entrant, row, _CLIENT_FILLABLE, 1.0)
             return row["id"], "found"
 
-    conditions, params = [], []
-    if customer.last_name:
-        conditions.append("lastName = %s")
-        params.append(customer.last_name)
-    if customer.first_name:
-        conditions.append("firstName = %s")
-        params.append(customer.first_name)
-    if customer.postal_code is not None:
-        conditions.append("postalCode = %s")
-        params.append(str(customer.postal_code))
-    if conditions:
-        cur.execute(
-            f"SELECT id FROM clients WHERE {' AND '.join(conditions)} ORDER BY id DESC LIMIT 1",
-            params,
-        )
-        row = cur.fetchone()
-        if row:
-            return row["id"], "found"
+    # Candidats : ceux que NOUS avons créés, donc sans ancrage. Les autres portent
+    # déjà un vmId et sont atteints par le chemin rapide ci-dessus.
+    #
+    # Ordre par id croissant : à égalité de score, la fiche la plus ancienne gagne,
+    # c'est elle qui porte l'historique.
+    cur.execute(f"SELECT {colonnes} FROM clients WHERE vmId IS NULL ORDER BY id")
+    candidats = cur.fetchall()
+    trouve, score = best_match(entrant, candidats, score_client)
+    if trouve and score >= MATCH:
+        _completer(cur, "clients", trouve["id"], entrant, trouve, _CLIENT_FILLABLE, score)
+        return trouve["id"], "matched"
 
     cur.execute(
         "INSERT INTO clients (gender, firstName, lastName, phone, email, address, postalCode, city, clientType, vatNumber, siren, vmId) "
@@ -239,6 +313,72 @@ def _insert_vehicle(cur, client_id: int, car: UpsertCarInput, vroomly: dict) -> 
     vehicle_id = cur.lastrowid
     cur.execute("INSERT INTO synchronization (`key`, `value`) VALUES ('newVehicle', %s)", (str(vehicle_id),))
     return vehicle_id
+
+
+def _resolve_vehicle(cur, client_id: int, car: UpsertCarInput) -> tuple[Optional[int], str]:
+    """Rapproche le véhicule poussé d'un véhicule existant, ou le crée.
+
+    Deux corrections par rapport à l'ancienne version, qui ne traitait que le cas du
+    `vmId` connu :
+
+      * un véhicule SANS `vmId` était purement ignoré (`skipped`), donc jamais créé
+        ni rapproché ;
+      * un `vmId` inconnu provoquait une création SANS regarder l'immatriculation,
+        d'où un doublon garanti avec le véhicule saisi par le garage.
+
+    L'immatriculation décide. La recherche commence par les véhicules du client déjà
+    résolu — un même véhicule appartient au même client des deux côtés — puis
+    s'élargit à ceux que nous avons créés sans ancrage.
+    """
+    colonnes = ", ".join(["id", "clientId", "`licensePlate`", "`brand`"]
+                         + [f"`{c}`" for c in _VEHICLE_FILLABLE])
+    entrant = {
+        "vmId": car.vm_id,
+        "licensePlate": car.license_plate,
+        "brand": car.brand,
+        "vin": car.vin,
+        "type": car.type,
+        "registrationDate": _parse_date(car.registration_date),
+    }
+
+    if car.vm_id:
+        cur.execute(
+            f"SELECT {colonnes} FROM vehicles WHERE vmId = %s ORDER BY id LIMIT 1",
+            (car.vm_id,),
+        )
+        row = cur.fetchone()
+        if row:
+            _completer(cur, "vehicles", row["id"], entrant, row, _VEHICLE_FILLABLE, 1.0)
+            return row["id"], "found"
+
+    if not car.license_plate:
+        # Sans immatriculation, aucun rapprochement n'est défendable : la marque seule
+        # ne distingue rien. On crée, quitte à faire un doublon visible.
+        vroomly = {}
+        return _insert_vehicle(cur, client_id, car, vroomly), "created"
+
+    # D'abord les véhicules de ce client, puis les autres sans ancrage.
+    cur.execute(
+        f"SELECT {colonnes} FROM vehicles WHERE clientId = %s ORDER BY id",
+        (client_id,),
+    )
+    candidats = cur.fetchall()
+    trouve, score = best_match(entrant, candidats, score_vehicle)
+    if not (trouve and score >= MATCH):
+        cur.execute(
+            f"SELECT {colonnes} FROM vehicles WHERE vmId IS NULL AND clientId <> %s ORDER BY id",
+            (client_id,),
+        )
+        trouve, score = best_match(entrant, cur.fetchall(), score_vehicle)
+
+    if trouve and score >= MATCH:
+        _completer(cur, "vehicles", trouve["id"], entrant, trouve, _VEHICLE_FILLABLE, score)
+        return trouve["id"], "matched"
+
+    # Création : c'est le seul cas où l'on interroge Vroomly, un appel réseau qui n'a
+    # pas de raison d'être quand on vient de retrouver le véhicule chez nous.
+    vroomly = lookup_plate(car.license_plate)
+    return _insert_vehicle(cur, client_id, car, vroomly), "created"
 
 
 def _sync_details(bill_id: int, detail_inputs: list, price_t1: float) -> DetailsSyncResult:
@@ -319,32 +459,27 @@ def upsert_bill(payload: UpsertBillPayload, current_user: dict = Depends(get_cur
     with db_cursor() as cur:
         price_t1, _t2, _t3 = _get_t_prices(cur)
 
-    # Resolve / create customer
-    with db_cursor(commit=True) as cur:
-        client_id, client_action = _resolve_customer(cur, payload.header.customer)
+    # Le numéro de compte arrive sur l'en-tête de la facture et non sur le client :
+    # il est lu ici pour que le rapprochement puisse en garnir `clients.accountNumber`,
+    # où rien ne le portait jusqu'alors.
+    hbill = payload.header.bill
+    account_pour_client = hbill.account
 
-    # Resolve / create vehicle (only when vmId is present in the input)
+    # Resolve / match / create customer
+    with db_cursor(commit=True) as cur:
+        client_id, client_action = _resolve_customer(
+            cur, payload.header.customer, account=account_pour_client
+        )
+
+    # Resolve / match / create vehicle
     vehicle_id: Optional[int] = None
     vehicle_action = "skipped"
     car = payload.header.car
-    if car and car.vm_id:
-        with db_cursor() as cur:
-            cur.execute(
-                "SELECT id FROM vehicles WHERE vmId = %s ORDER BY id DESC LIMIT 1",
-                (car.vm_id,),
-            )
-            row = cur.fetchone()
-        if row:
-            vehicle_id = row["id"]
-            vehicle_action = "found"
-        else:
-            vroomly = lookup_plate(car.license_plate) if car.license_plate else {}
-            with db_cursor(commit=True) as cur:
-                vehicle_id = _insert_vehicle(cur, client_id, car, vroomly)
-            vehicle_action = "created"
+    if car:
+        with db_cursor(commit=True) as cur:
+            vehicle_id, vehicle_action = _resolve_vehicle(cur, client_id, car)
 
     # Upsert bill
-    hbill = payload.header.bill
     with db_cursor() as cur:
         cur.execute("SELECT id FROM bills WHERE billId = %s", (hbill.bill_id,))
         existing_bill = cur.fetchone()
