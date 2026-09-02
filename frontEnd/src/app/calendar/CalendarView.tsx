@@ -660,25 +660,26 @@ export default function CalendarView({
                     {/* Nom abrégé : « mer. » plutôt que « mercredi ». Sur une seule
                         ligne et dans une colonne de semaine, le nom entier suivi du
                         numéro déborderait. */}
-                    <span
-                      className={cn(
-                        "text-[10px] uppercase tracking-wider",
-                        _today ? "text-primary" : "text-muted-foreground"
-                      )}
-                    >
-                      {format(d, view === "day" ? "EEEE" : "EEE", { locale: fr })}
-                    </span>
-                    {/* La pastille ronde d'« aujourd'hui » est remplacée par la
-                        couleur : elle mesurait 28 px et fixait à elle seule la hauteur
-                        de la ligne. Le fond teinté de la cellule reste, lui. */}
-                    <span
-                      className={cn(
-                        "text-[11px] font-semibold tabular-nums",
-                        _today ? "text-primary" : "text-foreground"
-                      )}
-                    >
-                      {format(d, "d", { locale: fr })}
-                    </span>
+                    {_today ? (
+                      /* Pastille englobant le nom ET le numéro. Hauteur fixée à 14 px
+                         dans une ligne de 16 : un pixel de part et d'autre, sans quoi
+                         elle remplirait la cellule et ne se lirait plus comme une
+                         pastille. L'ancienne, ronde et autour du seul numéro, mesurait
+                         28 px et imposait sa hauteur à toute la ligne. */
+                      <span className="inline-flex h-[14px] items-center gap-1 rounded-full bg-primary px-1.5 text-[10px] font-semibold uppercase tracking-wider text-primary-foreground">
+                        <span>{format(d, view === "day" ? "EEEE" : "EEE", { locale: fr })}</span>
+                        <span className="tabular-nums">{format(d, "d", { locale: fr })}</span>
+                      </span>
+                    ) : (
+                      <>
+                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                          {format(d, view === "day" ? "EEEE" : "EEE", { locale: fr })}
+                        </span>
+                        <span className="text-[11px] font-semibold tabular-nums text-foreground">
+                          {format(d, "d", { locale: fr })}
+                        </span>
+                      </>
+                    )}
                   </div>
                 );
               })}
