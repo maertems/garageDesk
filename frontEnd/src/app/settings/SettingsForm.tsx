@@ -27,8 +27,17 @@ export default function SettingsForm(props: { initial?: Record<string, string> }
   const [defaultDurationMinutes, setDefaultDurationMinutes] = useState(
     initial.calendarDefaultDurationMinutes ?? "15"
   );
+  // Découpage de l'heure dans la grille. À ne pas confondre avec la durée par défaut
+  // d'un rendez-vous ci-dessus : celle-ci dit combien de temps dure un RDV créé,
+  // celui-là combien de lignes une heure compte à l'écran.
+  const [slotMinutes, setSlotMinutes] = useState(initial.calendarSlotMinutes ?? "15");
   const [saving, setSaving] = useState(false);
   const hours = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`);
+  const slotOptions = [
+    { value: "15", label: "15 min — 4 blocs par heure" },
+    { value: "30", label: "30 min — 2 blocs par heure" },
+    { value: "60", label: "1 h — 1 seul bloc" },
+  ];
   const durationOptions = [
     { value: "15", label: "15 min" },
     { value: "30", label: "30 min" },
@@ -66,6 +75,11 @@ export default function SettingsForm(props: { initial?: Record<string, string> }
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ value: defaultDurationMinutes }),
+      }),
+      fetch("/api/proxy/settings/calendarSlotMinutes", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: slotMinutes }),
       }),
     ]);
     setSaving(false);
@@ -138,6 +152,35 @@ export default function SettingsForm(props: { initial?: Record<string, string> }
                 ))}
               </select>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section className={SECTION_CARD}>
+        <header className={SECTION_HEADER}>
+          <h3 className={SECTION_TITLE}>Découpage de l&apos;heure</h3>
+        </header>
+        <div className="p-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="slotMinutes">Hauteur d&apos;un bloc</Label>
+            <select
+              id="slotMinutes"
+              value={slotMinutes}
+              onChange={(e) => setSlotMinutes(e.target.value)}
+              className={selectStyles}
+            >
+              {slotOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Découpage de la grille du calendrier. L&apos;heure garde la même hauteur
+              à l&apos;écran : elle est simplement coupée en 4, en 2, ou pas du tout.
+              Un clic dans la grille crée un rendez-vous au début du bloc, et le
+              déplacement d&apos;un rendez-vous s&apos;aligne sur ce même pas.
+            </p>
           </div>
         </div>
       </section>

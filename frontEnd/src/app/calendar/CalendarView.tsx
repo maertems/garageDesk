@@ -177,8 +177,16 @@ function computeOverlapColumnsPerGroup(
   return result;
 }
 
-const SLOT_MINUTES = 15;
-const SLOT_HEIGHT_PX = 22;
+// Hauteur d'une HEURE à l'écran, et non d'un bloc : c'est elle qui doit rester
+// constante quand on change le découpage. Historiquement 4 blocs de 22 px.
+const HOUR_HEIGHT_PX = 88;
+// Découpages proposés (réglage `calendarSlotMinutes`). Une heure y est coupée en 4,
+// en 2, ou pas du tout.
+const SLOT_MINUTES_ALLOWED = [15, 30, 60];
+// Hauteur minimale d'un bloc de rendez-vous, en pixels et NON en fraction de bloc :
+// avec des blocs d'une heure, une demi-hauteur de bloc ferait 44 px et exagérerait
+// grossièrement la durée d'un rendez-vous de quinze minutes.
+const MIN_EVENT_HEIGHT_PX = 11;
 const APPOINTMENT_STATUS_BORDER_PX = 6;
 const SLOT_CLICK_RIGHT_MARGIN_PX = 24;
 const PRET_BOX_HEIGHT_PX = 22;
@@ -323,6 +331,8 @@ export default function CalendarView({
   const [editingReservationId, setEditingReservationId] = useState<number | null>(null);
   const [defaultDurationMinsFromSettings, setDefaultDurationMinsFromSettings] =
     useState<number>(defaultDurationMins);
+  // Découpage de l'heure dans la grille, réglé dans Paramètres → Calendrier.
+  const [slotMinutes, setSlotMinutes] = useState(15);
   const [activeDrag, setActiveDrag] = useState<{ apt: Appointment; heightPx: number } | null>(null);
   const router = useRouter();
 
@@ -340,6 +350,9 @@ export default function CalendarView({
         const parsed = parseInt(raw, 10);
         const allowed = [15, 30, 60, 120, 240, 480];
         setDefaultDurationMinsFromSettings(allowed.includes(parsed) ? parsed : 15);
+
+        const rawSlot = parseInt(map.calendarSlotMinutes ?? "15", 10);
+        setSlotMinutes(SLOT_MINUTES_ALLOWED.includes(rawSlot) ? rawSlot : 15);
       })
       .catch(() => {});
   }, []);
@@ -347,7 +360,11 @@ export default function CalendarView({
   const startMins = Math.floor(parseTime(dayStart) / 60) * 60;
   const endMins = Math.floor(parseTime(dayEnd) / 60) * 60;
   const totalMins = endMins - startMins;
-  const slotCount = Math.floor(totalMins / SLOT_MINUTES);
+  const slotCount = Math.floor(totalMins / slotMinutes);
+  // L'heure conserve sa hauteur quel que soit le découpage : 22 px par bloc à 15 min,
+  // 44 à 30, 88 à l'heure. Sans cela, passer au bloc d'une heure écraserait la
+  // journée à un quart de sa hauteur.
+  const slotHeightPx = (HOUR_HEIGHT_PX * slotMinutes) / 60;
 
   const weekStart = startOfWeek(baseDate, { weekStartsOn: 1 });
   const days =
@@ -454,14 +471,14 @@ export default function CalendarView({
       const durationMins = durationMs / 60000;
 
       // Compute new start: original time + vertical delta snapped to 15 min
-      const deltaMinutes = Math.round(delta.y / SLOT_HEIGHT_PX) * SLOT_MINUTES;
+      const deltaMinutes = Math.round(delta.y / slotHeightPx) * slotMinutes;
       const originalStartMins = originalStart.getHours() * 60 + originalStart.getMinutes();
       let newStartMins = originalStartMins + deltaMinutes;
 
       // Clamp within visible day range
       newStartMins = Math.max(startMins, Math.min(endMins - durationMins, newStartMins));
       // Snap to 15-min grid
-      newStartMins = Math.round(newStartMins / SLOT_MINUTES) * SLOT_MINUTES;
+      newStartMins = Math.round(newStartMins / slotMinutes) * slotMinutes;
 
       const targetDay = parseISO(targetDayISO);
       const newStart = new Date(targetDay);
@@ -603,7 +620,7 @@ export default function CalendarView({
               className="grid"
               style={{
                 gridTemplateColumns: `64px repeat(${displayDays}, minmax(0, 1fr))`,
-                gridTemplateRows: `auto auto ${slotCount * SLOT_HEIGHT_PX}px`,
+                gridTemplateRows: `auto auto ${slotCount * slotHeightPx}px`,
               }}
             >
               {/* Top-left empty cell */}
@@ -725,13 +742,13 @@ export default function CalendarView({
               {/* Hours column */}
               <div
                 className="flex flex-col border-r bg-card"
-                style={{ gridColumn: "1", gridRow: "3", height: slotCount * SLOT_HEIGHT_PX }}
+                style={{ gridColumn: "1", gridRow: "3", height: slotCount * slotHeightPx }}
               >
                 {Array.from({ length: Math.floor(totalMins / 60) }).map((_, hourIdx) => (
                   <div
                     key={hourIdx}
                     className="border-b text-[11px] text-muted-foreground flex items-start justify-end pr-2 pt-0.5 font-medium tabular-nums"
-                    style={{ height: 4 * SLOT_HEIGHT_PX }}
+                    style={{ height: HOUR_HEIGHT_PX }}
                   >
                     {String(Math.floor(startMins / 60) + hourIdx).padStart(2, "0")}:00
                   </div>
@@ -745,17 +762,17 @@ export default function CalendarView({
                 const dayAppointments = appointments.filter((a) =>
                   isSameDay(parseISO(a.startTime), day)
                 );
-                const slotCountPx = slotCount * SLOT_HEIGHT_PX;
+                const slotCountPx = slotCount * slotHeightPx;
                 const blocks = dayAppointments.map((apt) => {
                   const start = parseISO(apt.startTime);
                   const end = parseISO(apt.endTime);
                   const startMinsFromDay = start.getHours() * 60 + start.getMinutes() - startMins;
                   const endMinsFromDay = end.getHours() * 60 + end.getMinutes() - startMins;
-                  const rawTopPx = (startMinsFromDay / SLOT_MINUTES) * SLOT_HEIGHT_PX;
-                  const rawEndPx = (endMinsFromDay / SLOT_MINUTES) * SLOT_HEIGHT_PX;
+                  const rawTopPx = (startMinsFromDay / slotMinutes) * slotHeightPx;
+                  const rawEndPx = (endMinsFromDay / slotMinutes) * slotHeightPx;
                   const topPx = Math.max(0, Math.min(slotCountPx, rawTopPx));
                   const endPx = Math.max(topPx, Math.min(slotCountPx, rawEndPx));
-                  const heightPx = Math.max(SLOT_HEIGHT_PX / 2, endPx - topPx);
+                  const heightPx = Math.max(MIN_EVENT_HEIGHT_PX, endPx - topPx);
                   return { apt, topPx, endPx, heightPx };
                 });
                 const columns = computeOverlapColumnsPerGroup(
@@ -773,16 +790,16 @@ export default function CalendarView({
                       "relative border-r cursor-pointer",
                       _today ? "bg-primary/5" : "bg-card"
                     )}
-                    style={{ gridRow: "3", height: slotCount * SLOT_HEIGHT_PX }}
+                    style={{ gridRow: "3", height: slotCount * slotHeightPx }}
                     onClick={(e) => {
                       if ((e.target as HTMLElement).closest("[data-appointment-block]")) return;
                       const rect = e.currentTarget.getBoundingClientRect();
                       const relativeY = e.clientY - rect.top;
                       const slotIdx = Math.max(
                         0,
-                        Math.min(slotCount - 1, Math.floor(relativeY / SLOT_HEIGHT_PX))
+                        Math.min(slotCount - 1, Math.floor(relativeY / slotHeightPx))
                       );
-                      handleSlotClick(day, slotIdx * SLOT_MINUTES);
+                      handleSlotClick(day, slotIdx * slotMinutes);
                     }}
                   >
                     {/* Slot lines */}
@@ -795,7 +812,7 @@ export default function CalendarView({
                             "absolute left-0 right-0 pointer-events-none",
                             isHourEnd ? "border-b border-border" : "border-b border-border/40"
                           )}
-                          style={{ top: slotIdx * SLOT_HEIGHT_PX, height: SLOT_HEIGHT_PX, zIndex: 0 }}
+                          style={{ top: slotIdx * slotHeightPx, height: slotHeightPx, zIndex: 0 }}
                         />
                       );
                     })}
