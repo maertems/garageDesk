@@ -13,9 +13,47 @@ const SECTION_CARD = "rounded-lg border bg-card overflow-hidden";
 const selectStyles =
   "flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
-export default function SettingsForm(props: { initial?: Record<string, string> }) {
+export type AppointmentCategory = { id: number; code: string; color?: string | null };
+
+/**
+ * Les couleurs stockées ne sont pas garanties hexadécimales : la colonne est un
+ * `VARCHAR(32)` sans validation, et la valeur part telle quelle dans le
+ * `style.background` du bloc de rendez-vous. Or `<input type="color">` n'accepte
+ * qu'un `#rrggbb` et ramène silencieusement tout le reste à `#000000` — ouvrir
+ * cette page suffirait donc à proposer du noir pour une catégorie enregistrée en
+ * `red`. D'où deux précautions : cette normalisation ne sert qu'à l'AFFICHAGE du
+ * sélecteur, et seules les catégories réellement touchées sont enregistrées.
+ */
+function normaliserHex(valeur: string | null | undefined): string {
+  const v = (valeur ?? "").trim();
+  if (/^#[0-9a-f]{6}$/i.test(v)) return v.toLowerCase();
+  // Forme courte : #abc vaut #aabbcc.
+  const court = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(v);
+  if (court) return `#${court[1]}${court[1]}${court[2]}${court[2]}${court[3]}${court[3]}`.toLowerCase();
+  return "#e0e0e0";
+}
+
+/** Vrai si la valeur stockée n'est pas une couleur que le sélecteur sait montrer. */
+function hexIllisible(valeur: string | null | undefined): boolean {
+  const v = (valeur ?? "").trim();
+  if (!v) return false;
+  return !/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v);
+}
+
+export default function SettingsForm(props: {
+  initial?: Record<string, string>;
+  initialCategories?: AppointmentCategory[];
+}) {
   const initial = props.initial ?? {};
+  const categories = props.initialCategories ?? [];
   const router = useRouter();
+  // Couleurs en cours d'édition, par identifiant de catégorie.
+  const [couleurs, setCouleurs] = useState<Record<number, string>>(() =>
+    Object.fromEntries(categories.map((c) => [c.id, normaliserHex(c.color)]))
+  );
+  // Catégories que l'utilisateur a effectivement changées : ce sont les SEULES
+  // qui partiront en PATCH, pour la raison expliquée au-dessus.
+  const [touchees, setTouchees] = useState<number[]>([]);
   const toFullHour = (t: string) => {
     const h = parseInt(t.slice(0, 2), 10) || 0;
     return `${String(Math.max(0, Math.min(23, h))).padStart(2, "0")}:00`;
@@ -99,7 +137,17 @@ export default function SettingsForm(props: { initial?: Record<string, string> }
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ value: hourHeightPx }),
       }),
+      // Les couleurs de catégorie ne sont pas des réglages clé/valeur : chacune est
+      // une ressource à part, d'où un PATCH par catégorie touchée.
+      ...touchees.map((id) =>
+        fetch(`/api/proxy/appointmentCategories/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ color: couleurs[id] }),
+        })
+      ),
     ]);
+    setTouchees([]);
     setSaving(false);
     router.refresh();
   }
@@ -244,6 +292,68 @@ export default function SettingsForm(props: { initial?: Record<string, string> }
               ))}
             </select>
           </div>
+        </div>
+      </section>
+
+      <section className={SECTION_CARD}>
+        <header className={SECTION_HEADER}>
+          <h3 className={SECTION_TITLE}>Couleurs des catégories</h3>
+        </header>
+        <div className="p-4">
+          {categories.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Aucune catégorie de rendez-vous n&apos;a pu être lue.
+            </p>
+          ) : (
+            <>
+              <p className="mb-3 text-xs text-muted-foreground">
+                C&apos;est le fond du bloc de rendez-vous dans le calendrier. L&apos;aperçu
+                montre le libellé tel qu&apos;il s&apos;affichera par-dessus.
+              </p>
+              <div className="space-y-3">
+                {categories.map((c) => (
+                  <div key={c.id} className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      id={`categorie-${c.id}`}
+                      value={couleurs[c.id] ?? "#e0e0e0"}
+                      onChange={(e) => {
+                        setCouleurs((p) => ({ ...p, [c.id]: e.target.value }));
+                        setTouchees((p) => (p.includes(c.id) ? p : [...p, c.id]));
+                      }}
+                      className="h-9 w-14 shrink-0 cursor-pointer rounded-md border border-input bg-card p-1"
+                    />
+                    <Label
+                      htmlFor={`categorie-${c.id}`}
+                      className="flex-1 cursor-pointer first-letter:capitalize"
+                    >
+                      {c.code}
+                    </Label>
+                    <span
+                      className="rounded px-2 py-0.5 text-[11px] font-medium first-letter:capitalize"
+                      style={{ background: couleurs[c.id] ?? "#e0e0e0" }}
+                    >
+                      {c.code}
+                    </span>
+                    <span className="w-16 shrink-0 text-right font-mono text-xs text-muted-foreground">
+                      {couleurs[c.id]}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {categories.some((c) => hexIllisible(c.color)) && (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {categories
+                    .filter((c) => hexIllisible(c.color))
+                    .map((c) => `${c.code} : « ${c.color} »`)
+                    .join(", ")}{" "}
+                  — cette valeur n&apos;est pas hexadécimale et le sélecteur ne peut pas la
+                  montrer. Elle reste en base tant que vous n&apos;y touchez pas ; la
+                  changer l&apos;écrasera.
+                </p>
+              )}
+            </>
+          )}
         </div>
       </section>
 
