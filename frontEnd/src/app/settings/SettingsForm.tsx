@@ -31,8 +31,22 @@ export default function SettingsForm(props: { initial?: Record<string, string> }
   // d'un rendez-vous ci-dessus : celle-ci dit combien de temps dure un RDV créé,
   // celui-là combien de lignes une heure compte à l'écran.
   const [slotMinutes, setSlotMinutes] = useState(initial.calendarSlotMinutes ?? "15");
+  const [hourHeightPx, setHourHeightPx] = useState(initial.calendarHourHeightPx ?? "88");
   const [saving, setSaving] = useState(false);
   const hours = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`);
+  // Multiples de 4 uniquement : la colonne des heures et les lignes de la grille
+  // sont deux colonnes distinctes, et leur alignement n'est exact que si l'heure se
+  // divise sans reste par 4 et par 2. Toute autre valeur décalerait les traits.
+  const hourHeightOptions = [
+    { value: "44", label: "44 px — très compact" },
+    { value: "56", label: "56 px" },
+    { value: "68", label: "68 px" },
+    { value: "80", label: "80 px" },
+    { value: "88", label: "88 px — par défaut" },
+    { value: "100", label: "100 px" },
+    { value: "112", label: "112 px" },
+    { value: "120", label: "120 px — très aéré" },
+  ];
   const slotOptions = [
     { value: "15", label: "15 min — 4 blocs par heure" },
     { value: "30", label: "30 min — 2 blocs par heure" },
@@ -80,6 +94,11 @@ export default function SettingsForm(props: { initial?: Record<string, string> }
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ value: slotMinutes }),
+      }),
+      fetch("/api/proxy/settings/calendarHourHeightPx", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: hourHeightPx }),
       }),
     ]);
     setSaving(false);
@@ -176,10 +195,32 @@ export default function SettingsForm(props: { initial?: Record<string, string> }
               ))}
             </select>
             <p className="text-xs text-muted-foreground">
-              Découpage de la grille du calendrier. L&apos;heure garde la même hauteur
-              à l&apos;écran : elle est simplement coupée en 4, en 2, ou pas du tout.
-              Un clic dans la grille crée un rendez-vous au début du bloc, et le
+              Découpage de la grille du calendrier. L&apos;heure garde la hauteur
+              choisie ci-dessous : elle est simplement coupée en 4, en 2, ou pas du
+              tout. Un clic dans la grille crée un rendez-vous au début du bloc, et le
               déplacement d&apos;un rendez-vous s&apos;aligne sur ce même pas.
+            </p>
+          </div>
+
+          <div className="mt-4 space-y-1.5">
+            <Label htmlFor="hourHeightPx">Hauteur d&apos;une heure</Label>
+            <select
+              id="hourHeightPx"
+              value={hourHeightPx}
+              onChange={(e) => setHourHeightPx(e.target.value)}
+              className={selectStyles}
+            >
+              {hourHeightOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Décide de la hauteur de la journée entière : une journée de dix heures
+              occupe dix fois cette valeur. Les valeurs proposées sont toutes des
+              multiples de 4, pour que les traits de la grille et ceux de la colonne
+              des heures restent alignés au pixel.
             </p>
           </div>
         </div>

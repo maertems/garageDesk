@@ -177,9 +177,16 @@ function computeOverlapColumnsPerGroup(
   return result;
 }
 
-// Hauteur d'une HEURE à l'écran, et non d'un bloc : c'est elle qui doit rester
-// constante quand on change le découpage. Historiquement 4 blocs de 22 px.
-const HOUR_HEIGHT_PX = 88;
+// Hauteur d'une HEURE à l'écran, et non d'un bloc : c'est elle qui reste constante
+// quand on change le découpage. 88 px historiquement, soit 4 blocs de 22.
+const HOUR_HEIGHT_DEFAULT_PX = 88;
+// Valeurs proposées (réglage `calendarHourHeightPx`). Toutes MULTIPLES DE 4, et ce
+// n'est pas une coquetterie : la colonne des heures et les lignes de la grille sont
+// deux colonnes distinctes du DOM, et leur alignement n'est exact que si la hauteur
+// de l'heure se divise sans reste par 4 (blocs de 15 min) et par 2 (blocs de 30).
+// À 50 px, un bloc ferait 12,5 px et les traits se décaleraient d'un pixel selon
+// l'arrondi du navigateur.
+const HOUR_HEIGHT_ALLOWED_PX = [44, 56, 68, 80, 88, 100, 112, 120];
 // Découpages proposés (réglage `calendarSlotMinutes`). Une heure y est coupée en 4,
 // en 2, ou pas du tout.
 const SLOT_MINUTES_ALLOWED = [15, 30, 60];
@@ -333,6 +340,7 @@ export default function CalendarView({
     useState<number>(defaultDurationMins);
   // Découpage de l'heure dans la grille, réglé dans Paramètres → Calendrier.
   const [slotMinutes, setSlotMinutes] = useState(15);
+  const [hourHeightPx, setHourHeightPx] = useState(HOUR_HEIGHT_DEFAULT_PX);
   const [activeDrag, setActiveDrag] = useState<{ apt: Appointment; heightPx: number } | null>(null);
   const router = useRouter();
 
@@ -353,6 +361,11 @@ export default function CalendarView({
 
         const rawSlot = parseInt(map.calendarSlotMinutes ?? "15", 10);
         setSlotMinutes(SLOT_MINUTES_ALLOWED.includes(rawSlot) ? rawSlot : 15);
+
+        const rawHour = parseInt(map.calendarHourHeightPx ?? "", 10);
+        setHourHeightPx(
+          HOUR_HEIGHT_ALLOWED_PX.includes(rawHour) ? rawHour : HOUR_HEIGHT_DEFAULT_PX
+        );
       })
       .catch(() => {});
   }, []);
@@ -364,7 +377,7 @@ export default function CalendarView({
   // L'heure conserve sa hauteur quel que soit le découpage : 22 px par bloc à 15 min,
   // 44 à 30, 88 à l'heure. Sans cela, passer au bloc d'une heure écraserait la
   // journée à un quart de sa hauteur.
-  const slotHeightPx = (HOUR_HEIGHT_PX * slotMinutes) / 60;
+  const slotHeightPx = (hourHeightPx * slotMinutes) / 60;
 
   const weekStart = startOfWeek(baseDate, { weekStartsOn: 1 });
   const days =
@@ -748,7 +761,7 @@ export default function CalendarView({
                   <div
                     key={hourIdx}
                     className="border-b text-[11px] text-muted-foreground flex items-start justify-end pr-2 pt-0.5 font-medium tabular-nums"
-                    style={{ height: HOUR_HEIGHT_PX }}
+                    style={{ height: hourHeightPx }}
                   >
                     {String(Math.floor(startMins / 60) + hourIdx).padStart(2, "0")}:00
                   </div>
