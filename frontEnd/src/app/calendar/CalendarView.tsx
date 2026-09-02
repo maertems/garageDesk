@@ -180,13 +180,17 @@ function computeOverlapColumnsPerGroup(
 // Hauteur d'une HEURE à l'écran, et non d'un bloc : c'est elle qui reste constante
 // quand on change le découpage. 88 px historiquement, soit 4 blocs de 22.
 const HOUR_HEIGHT_DEFAULT_PX = 88;
-// Valeurs proposées (réglage `calendarHourHeightPx`). Toutes MULTIPLES DE 4, et ce
-// n'est pas une coquetterie : la colonne des heures et les lignes de la grille sont
-// deux colonnes distinctes du DOM, et leur alignement n'est exact que si la hauteur
-// de l'heure se divise sans reste par 4 (blocs de 15 min) et par 2 (blocs de 30).
-// À 50 px, un bloc ferait 12,5 px et les traits se décaleraient d'un pixel selon
-// l'arrondi du navigateur.
-const HOUR_HEIGHT_ALLOWED_PX = [44, 56, 68, 80, 88, 100, 112, 120];
+// Hauteurs proposées, nommées côté réglages : petit 56, compact 68, normal 88,
+// large 112. La valeur stockée reste le nombre de pixels — la clé s'appelle
+// `calendarHourHeightPx` et le garage a déjà 68 enregistré ; passer au libellé aurait
+// silencieusement tout ramené au défaut.
+//
+// Toutes MULTIPLES DE 4, et ce n'est pas une coquetterie : la colonne des heures et
+// les lignes de la grille sont deux colonnes distinctes du DOM, et leur alignement
+// n'est exact que si la hauteur de l'heure se divise sans reste par 4 (blocs de
+// 15 min) et par 2 (blocs de 30). À 50 px, un bloc ferait 12,5 px et les traits se
+// décaleraient d'un pixel selon l'arrondi du navigateur.
+const HOUR_HEIGHT_ALLOWED_PX = [56, 68, 88, 112];
 // Hauteur de la ligne des jours. Elle occupait environ 60 px sur deux lignes, avec
 // une pastille ronde de 28 px les jours « aujourd'hui » qui imposait sa hauteur à
 // toute la ligne. Ramenée à 16 px sur une seule ligne, elle rendait le nom du jour

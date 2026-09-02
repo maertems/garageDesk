@@ -34,18 +34,17 @@ export default function SettingsForm(props: { initial?: Record<string, string> }
   const [hourHeightPx, setHourHeightPx] = useState(initial.calendarHourHeightPx ?? "88");
   const [saving, setSaving] = useState(false);
   const hours = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`);
-  // Multiples de 4 uniquement : la colonne des heures et les lignes de la grille
-  // sont deux colonnes distinctes, et leur alignement n'est exact que si l'heure se
-  // divise sans reste par 4 et par 2. Toute autre valeur décalerait les traits.
+  // Nommées plutôt que chiffrées : « compact » se choisit mieux que « 68 px ». La
+  // valeur enregistrée reste le nombre de pixels, la correspondance est rappelée sous
+  // le champ pour qui a besoin du chiffre.
+  //
+  // Les quatre sont des multiples de 4, condition de l'alignement entre la colonne
+  // des heures et les lignes de la grille, qui sont deux colonnes distinctes.
   const hourHeightOptions = [
-    { value: "44", label: "44 px — très compact" },
-    { value: "56", label: "56 px" },
-    { value: "68", label: "68 px" },
-    { value: "80", label: "80 px" },
-    { value: "88", label: "88 px — par défaut" },
-    { value: "100", label: "100 px" },
-    { value: "112", label: "112 px" },
-    { value: "120", label: "120 px — très aéré" },
+    { value: "56", label: "Petit" },
+    { value: "68", label: "Compact" },
+    { value: "88", label: "Normal" },
+    { value: "112", label: "Large" },
   ];
   const slotOptions = [
     { value: "15", label: "15 min — 4 blocs par heure" },
@@ -218,9 +217,8 @@ export default function SettingsForm(props: { initial?: Record<string, string> }
             </select>
             <p className="text-xs text-muted-foreground">
               Décide de la hauteur de la journée entière : une journée de dix heures
-              occupe dix fois cette valeur. Les valeurs proposées sont toutes des
-              multiples de 4, pour que les traits de la grille et ceux de la colonne
-              des heures restent alignés au pixel.
+              occupe dix fois cette valeur. Petit 56 px, compact 68, normal 88, large
+              112 — soit de 560 à 1 120 px pour dix heures.
             </p>
           </div>
         </div>
