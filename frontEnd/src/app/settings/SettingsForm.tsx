@@ -13,25 +13,34 @@ const SECTION_CARD = "rounded-lg border bg-card overflow-hidden";
 const selectStyles =
   "flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
-export type AppointmentCategory = { id: number; code: string; color?: string | null };
+/** Catégories et statuts ont la même forme et la même route de mise à jour. */
+export type ColoredCode = { id: number; code: string; color?: string | null };
+export type AppointmentCategory = ColoredCode;
+export type AppointmentStatus = ColoredCode;
 
 /**
  * Les couleurs stockées ne sont pas garanties hexadécimales : la colonne est un
- * `VARCHAR(32)` sans validation, et la valeur part telle quelle dans le
- * `style.background` du bloc de rendez-vous. Or `<input type="color">` n'accepte
- * qu'un `#rrggbb` et ramène silencieusement tout le reste à `#000000` — ouvrir
- * cette page suffirait donc à proposer du noir pour une catégorie enregistrée en
- * `red`. D'où deux précautions : cette normalisation ne sert qu'à l'AFFICHAGE du
- * sélecteur, et seules les catégories réellement touchées sont enregistrées.
+ * `VARCHAR(32)` sans validation, et la valeur part telle quelle dans le style du
+ * bloc de rendez-vous. Or `<input type="color">` n'accepte qu'un `#rrggbb` et
+ * ramène silencieusement tout le reste à `#000000` — ouvrir cette page suffirait
+ * donc à proposer du noir pour une catégorie enregistrée en `red`. D'où deux
+ * précautions : cette normalisation ne sert qu'à l'AFFICHAGE du sélecteur, et
+ * seules les lignes réellement touchées sont enregistrées.
  */
-function normaliserHex(valeur: string | null | undefined): string {
+function normaliserHex(valeur: string | null | undefined, defaut: string): string {
   const v = (valeur ?? "").trim();
   if (/^#[0-9a-f]{6}$/i.test(v)) return v.toLowerCase();
   // Forme courte : #abc vaut #aabbcc.
   const court = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(v);
   if (court) return `#${court[1]}${court[1]}${court[2]}${court[2]}${court[3]}${court[3]}`.toLowerCase();
-  return "#e0e0e0";
+  return defaut;
 }
+
+// Replis EXACTEMENT ceux du calendrier (`CalendarView.tsx`) : sans cela, le
+// sélecteur montrerait pour une couleur absente autre chose que ce qui est
+// réellement dessiné à l'écran.
+const DEFAUT_CATEGORIE = "#e0e0e0";
+const DEFAUT_STATUT = "#999999";
 
 /** Vrai si la valeur stockée n'est pas une couleur que le sélecteur sait montrer. */
 function hexIllisible(valeur: string | null | undefined): boolean {
@@ -40,20 +49,122 @@ function hexIllisible(valeur: string | null | undefined): boolean {
   return !/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v);
 }
 
+/**
+ * Une section de couleurs, pour les catégories comme pour les statuts.
+ *
+ * `apercu` dit comment la couleur est employée dans le calendrier, et l'aperçu le
+ * reproduit : la catégorie peint le **fond** du bloc, le statut sa **bordure
+ * gauche de 6 px**. Montrer les deux pareil laisserait juger une lisibilité qui
+ * n'est pas celle de l'écran réel.
+ */
+function SectionCouleurs({
+  titre,
+  note,
+  prefixe,
+  items,
+  couleurs,
+  onChange,
+  apercu,
+  defaut,
+  vide,
+}: {
+  titre: string;
+  note: string;
+  prefixe: string;
+  items: ColoredCode[];
+  couleurs: Record<number, string>;
+  onChange: (id: number, valeur: string) => void;
+  apercu: "fond" | "bordure";
+  defaut: string;
+  vide: string;
+}) {
+  return (
+    <section className={SECTION_CARD}>
+      <header className={SECTION_HEADER}>
+        <h3 className={SECTION_TITLE}>{titre}</h3>
+      </header>
+      <div className="p-4">
+        {items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{vide}</p>
+        ) : (
+          <>
+            <p className="mb-3 text-xs text-muted-foreground">{note}</p>
+            <div className="space-y-3">
+              {items.map((it) => {
+                const couleur = couleurs[it.id] ?? defaut;
+                return (
+                  <div key={it.id} className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      id={`${prefixe}-${it.id}`}
+                      value={couleur}
+                      onChange={(e) => onChange(it.id, e.target.value)}
+                      className="h-9 w-14 shrink-0 cursor-pointer rounded-md border border-input bg-card p-1"
+                    />
+                    <Label
+                      htmlFor={`${prefixe}-${it.id}`}
+                      className="flex-1 cursor-pointer first-letter:capitalize"
+                    >
+                      {it.code}
+                    </Label>
+                    <span
+                      className="rounded px-2 py-0.5 text-[11px] font-medium first-letter:capitalize"
+                      style={
+                        apercu === "fond"
+                          ? { background: couleur }
+                          : {
+                              background: DEFAUT_CATEGORIE,
+                              borderLeft: `6px solid ${couleur}`,
+                            }
+                      }
+                    >
+                      {it.code}
+                    </span>
+                    <span className="w-16 shrink-0 text-right font-mono text-xs text-muted-foreground">
+                      {couleur}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {items.some((it) => hexIllisible(it.color)) && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                {items
+                  .filter((it) => hexIllisible(it.color))
+                  .map((it) => `${it.code} : « ${it.color} »`)
+                  .join(", ")}{" "}
+                — cette valeur n&apos;est pas hexadécimale et le sélecteur ne peut pas la
+                montrer. Elle reste en base tant que vous n&apos;y touchez pas ; la
+                changer l&apos;écrasera.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export default function SettingsForm(props: {
   initial?: Record<string, string>;
   initialCategories?: AppointmentCategory[];
+  initialStatuses?: AppointmentStatus[];
 }) {
   const initial = props.initial ?? {};
   const categories = props.initialCategories ?? [];
+  const statuts = props.initialStatuses ?? [];
   const router = useRouter();
-  // Couleurs en cours d'édition, par identifiant de catégorie.
+  // Couleurs en cours d'édition, par identifiant.
   const [couleurs, setCouleurs] = useState<Record<number, string>>(() =>
-    Object.fromEntries(categories.map((c) => [c.id, normaliserHex(c.color)]))
+    Object.fromEntries(categories.map((c) => [c.id, normaliserHex(c.color, DEFAUT_CATEGORIE)]))
   );
-  // Catégories que l'utilisateur a effectivement changées : ce sont les SEULES
-  // qui partiront en PATCH, pour la raison expliquée au-dessus.
+  const [couleursStatuts, setCouleursStatuts] = useState<Record<number, string>>(() =>
+    Object.fromEntries(statuts.map((s) => [s.id, normaliserHex(s.color, DEFAUT_STATUT)]))
+  );
+  // Lignes que l'utilisateur a effectivement changées : ce sont les SEULES qui
+  // partiront en PATCH, pour la raison expliquée au-dessus.
   const [touchees, setTouchees] = useState<number[]>([]);
+  const [toucheesStatuts, setToucheesStatuts] = useState<number[]>([]);
   const toFullHour = (t: string) => {
     const h = parseInt(t.slice(0, 2), 10) || 0;
     return `${String(Math.max(0, Math.min(23, h))).padStart(2, "0")}:00`;
@@ -137,8 +248,8 @@ export default function SettingsForm(props: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ value: hourHeightPx }),
       }),
-      // Les couleurs de catégorie ne sont pas des réglages clé/valeur : chacune est
-      // une ressource à part, d'où un PATCH par catégorie touchée.
+      // Les couleurs ne sont pas des réglages clé/valeur : chaque catégorie et
+      // chaque statut est une ressource à part, d'où un PATCH par ligne touchée.
       ...touchees.map((id) =>
         fetch(`/api/proxy/appointmentCategories/${id}`, {
           method: "PATCH",
@@ -146,8 +257,16 @@ export default function SettingsForm(props: {
           body: JSON.stringify({ color: couleurs[id] }),
         })
       ),
+      ...toucheesStatuts.map((id) =>
+        fetch(`/api/proxy/appointmentStatuses/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ color: couleursStatuts[id] }),
+        })
+      ),
     ]);
     setTouchees([]);
+    setToucheesStatuts([]);
     setSaving(false);
     router.refresh();
   }
@@ -295,67 +414,35 @@ export default function SettingsForm(props: {
         </div>
       </section>
 
-      <section className={SECTION_CARD}>
-        <header className={SECTION_HEADER}>
-          <h3 className={SECTION_TITLE}>Couleurs des catégories</h3>
-        </header>
-        <div className="p-4">
-          {categories.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Aucune catégorie de rendez-vous n&apos;a pu être lue.
-            </p>
-          ) : (
-            <>
-              <p className="mb-3 text-xs text-muted-foreground">
-                C&apos;est le fond du bloc de rendez-vous dans le calendrier. L&apos;aperçu
-                montre le libellé tel qu&apos;il s&apos;affichera par-dessus.
-              </p>
-              <div className="space-y-3">
-                {categories.map((c) => (
-                  <div key={c.id} className="flex items-center gap-3">
-                    <input
-                      type="color"
-                      id={`categorie-${c.id}`}
-                      value={couleurs[c.id] ?? "#e0e0e0"}
-                      onChange={(e) => {
-                        setCouleurs((p) => ({ ...p, [c.id]: e.target.value }));
-                        setTouchees((p) => (p.includes(c.id) ? p : [...p, c.id]));
-                      }}
-                      className="h-9 w-14 shrink-0 cursor-pointer rounded-md border border-input bg-card p-1"
-                    />
-                    <Label
-                      htmlFor={`categorie-${c.id}`}
-                      className="flex-1 cursor-pointer first-letter:capitalize"
-                    >
-                      {c.code}
-                    </Label>
-                    <span
-                      className="rounded px-2 py-0.5 text-[11px] font-medium first-letter:capitalize"
-                      style={{ background: couleurs[c.id] ?? "#e0e0e0" }}
-                    >
-                      {c.code}
-                    </span>
-                    <span className="w-16 shrink-0 text-right font-mono text-xs text-muted-foreground">
-                      {couleurs[c.id]}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              {categories.some((c) => hexIllisible(c.color)) && (
-                <p className="mt-3 text-xs text-muted-foreground">
-                  {categories
-                    .filter((c) => hexIllisible(c.color))
-                    .map((c) => `${c.code} : « ${c.color} »`)
-                    .join(", ")}{" "}
-                  — cette valeur n&apos;est pas hexadécimale et le sélecteur ne peut pas la
-                  montrer. Elle reste en base tant que vous n&apos;y touchez pas ; la
-                  changer l&apos;écrasera.
-                </p>
-              )}
-            </>
-          )}
-        </div>
-      </section>
+      <SectionCouleurs
+        titre="Couleurs des catégories"
+        note="C'est le fond du bloc de rendez-vous dans le calendrier. L'aperçu montre le libellé tel qu'il s'affichera par-dessus."
+        prefixe="categorie"
+        items={categories}
+        couleurs={couleurs}
+        apercu="fond"
+        defaut={DEFAUT_CATEGORIE}
+        vide="Aucune catégorie de rendez-vous n'a pu être lue."
+        onChange={(id, valeur) => {
+          setCouleurs((p) => ({ ...p, [id]: valeur }));
+          setTouchees((p) => (p.includes(id) ? p : [...p, id]));
+        }}
+      />
+
+      <SectionCouleurs
+        titre="Couleurs des statuts"
+        note="C'est la bordure gauche du bloc de rendez-vous, sur 6 px, par-dessus la couleur de la catégorie."
+        prefixe="statut"
+        items={statuts}
+        couleurs={couleursStatuts}
+        apercu="bordure"
+        defaut={DEFAUT_STATUT}
+        vide="Aucun statut de rendez-vous n'a pu être lu."
+        onChange={(id, valeur) => {
+          setCouleursStatuts((p) => ({ ...p, [id]: valeur }));
+          setToucheesStatuts((p) => (p.includes(id) ? p : [...p, id]));
+        }}
+      />
 
       <Button type="submit" disabled={saving}>
         {saving && <Loader2 className="h-4 w-4 animate-spin" />}
