@@ -49,8 +49,22 @@ sudo docker rm gd-backend 2>/dev/null
 LOGS_HOST_DIR="${LOGS_HOST_DIR:-$SCRIPT_DIR/logs}"
 mkdir -p "$LOGS_HOST_DIR"
 
+# L'heure de l'hôte est partagée en lecture seule : sans ce montage, le conteneur
+# vit en UTC.
+#
+# Ce que cela corrige vraiment : `scheduler._reminder_job` compare `datetime.now()`
+# — naive, donc l'heure LOCALE DU CONTENEUR — à l'heure configurée pour les rappels
+# (« 19:00 »). En UTC, les rappels partaient avec deux heures de retard en été, une
+# en hiver, sans que rien ne le signale.
+#
+# Ce que cela ne corrige PAS, contrairement à ce qu'on pourrait croire : les dates
+# écrites dans les messages de notification étaient déjà justes. `_utc_to_local`
+# emploie un fuseau explicite (`ZoneInfo(settings.displayTimezone)`, repli
+# Europe/Paris) et ne dépend pas du fuseau du conteneur. Et le journal de fichier
+# reste en UTC, `log_service._now_iso` l'imposant explicitement.
 sudo docker run -d -p "${BACKEND_PORT}:80" \
   -v "$LOGS_HOST_DIR:/app/logs" \
+  -v /etc/localtime:/etc/localtime:ro \
   -e MYSQL_HOST="$MYSQL_HOST" \
   -e MYSQL_USER="$MYSQL_USER" \
   -e MYSQL_PASSWORD="$MYSQL_PASSWORD" \

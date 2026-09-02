@@ -38,7 +38,14 @@ fi
 sudo docker stop gd-frontend 2>/dev/null
 sudo docker rm gd-frontend 2>/dev/null
 
+# L'heure de l'hôte est partagée en lecture seule, par cohérence avec le conteneur
+# backend et pour que les journaux du serveur Next portent l'heure locale.
+#
+# À ne pas surestimer : les dates affichées dans l'interface sont formatées par le
+# NAVIGATEUR (`toLocaleDateString`), donc selon le fuseau du poste de l'utilisateur.
+# Ce montage ne les change pas.
 sudo docker run -d -p "${FRONTEND_PORT}:80" \
+  -v /etc/localtime:/etc/localtime:ro \
   -e BACKEND_URL="http://${BACKEND_HOST}:${BACKEND_PORT}" \
   -e APP_NAME="$APP_NAME" \
   -e SCHEDULER_ENABLED="$SCHEDULER_ENABLED" \
