@@ -187,12 +187,16 @@ const HOUR_HEIGHT_DEFAULT_PX = 88;
 // À 50 px, un bloc ferait 12,5 px et les traits se décaleraient d'un pixel selon
 // l'arrondi du navigateur.
 const HOUR_HEIGHT_ALLOWED_PX = [44, 56, 68, 80, 88, 100, 112, 120];
-// Hauteur de la ligne des jours. Elle occupait environ 60 px — 16 de marges, le nom
-// du jour, puis le numéro en corps 16, et une pastille ronde de 28 px les jours
-// « aujourd'hui » qui imposait sa hauteur à toute la ligne. Tout tient désormais sur
-// une seule ligne, et la pastille a cédé la place à une couleur : la journée gagne
-// une quarantaine de pixels, ce qui compte quand l'heure n'en fait que 68.
-const DAY_HEADER_HEIGHT_PX = 16;
+// Hauteur de la ligne des jours. Elle occupait environ 60 px sur deux lignes, avec
+// une pastille ronde de 28 px les jours « aujourd'hui » qui imposait sa hauteur à
+// toute la ligne. Ramenée à 16 px sur une seule ligne, elle rendait le nom du jour
+// trop discret : 32 px est le compromis retenu, moitié de l'origine, et de quoi lire
+// le nom entier.
+const DAY_HEADER_HEIGHT_PX = 32;
+// Hauteur de la pastille du jour courant, dans cette ligne. Deux pixels de jeu de
+// part et d'autre : à hauteur égale elle remplirait la cellule et ne se lirait plus
+// comme une pastille.
+const DAY_PILL_HEIGHT_PX = DAY_HEADER_HEIGHT_PX - 10;
 // Découpages proposés (réglage `calendarSlotMinutes`). Une heure y est coupée en 4,
 // en 2, ou pas du tout.
 const SLOT_MINUTES_ALLOWED = [15, 30, 60];
@@ -668,25 +672,32 @@ export default function CalendarView({
                     )}
                     style={{ height: DAY_HEADER_HEIGHT_PX }}
                   >
-                    {/* Nom abrégé : « mer. » plutôt que « mercredi ». Sur une seule
-                        ligne et dans une colonne de semaine, le nom entier suivi du
-                        numéro déborderait. */}
+                    {/* Nom entier, y compris en vue semaine : c'est lui qu'on lit en
+                        premier. « MERCREDI 3 » en 11 px majuscules occupe environ 80 px,
+                        pour une colonne de 140 px à sept jours — il tient. */}
                     {_today ? (
                       /* Pastille englobant le nom ET le numéro. Hauteur fixée à 14 px
                          dans une ligne de 16 : un pixel de part et d'autre, sans quoi
                          elle remplirait la cellule et ne se lirait plus comme une
                          pastille. L'ancienne, ronde et autour du seul numéro, mesurait
                          28 px et imposait sa hauteur à toute la ligne. */
-                      <span className="inline-flex h-[14px] items-center gap-1 rounded-full bg-primary px-1.5 text-[10px] font-semibold uppercase tracking-wider text-primary-foreground">
-                        <span>{format(d, view === "day" ? "EEEE" : "EEE", { locale: fr })}</span>
-                        <span className="tabular-nums">{format(d, "d", { locale: fr })}</span>
+                      <span
+                        className="inline-flex items-center gap-1.5 rounded-full bg-primary px-2 text-primary-foreground"
+                        style={{ height: DAY_PILL_HEIGHT_PX }}
+                      >
+                        <span className="text-[11px] font-semibold uppercase tracking-wide">
+                          {format(d, "EEEE", { locale: fr })}
+                        </span>
+                        <span className="text-[13px] font-bold tabular-nums">
+                          {format(d, "d", { locale: fr })}
+                        </span>
                       </span>
                     ) : (
                       <>
-                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                          {format(d, view === "day" ? "EEEE" : "EEE", { locale: fr })}
+                        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          {format(d, "EEEE", { locale: fr })}
                         </span>
-                        <span className="text-[11px] font-semibold tabular-nums text-foreground">
+                        <span className="text-[13px] font-semibold tabular-nums text-foreground">
                           {format(d, "d", { locale: fr })}
                         </span>
                       </>
