@@ -187,6 +187,12 @@ const HOUR_HEIGHT_DEFAULT_PX = 88;
 // À 50 px, un bloc ferait 12,5 px et les traits se décaleraient d'un pixel selon
 // l'arrondi du navigateur.
 const HOUR_HEIGHT_ALLOWED_PX = [44, 56, 68, 80, 88, 100, 112, 120];
+// Hauteur de la ligne des jours. Elle occupait environ 60 px — 16 de marges, le nom
+// du jour, puis le numéro en corps 16, et une pastille ronde de 28 px les jours
+// « aujourd'hui » qui imposait sa hauteur à toute la ligne. Tout tient désormais sur
+// une seule ligne, et la pastille a cédé la place à une couleur : la journée gagne
+// une quarantaine de pixels, ce qui compte quand l'heure n'en fait que 68.
+const DAY_HEADER_HEIGHT_PX = 16;
 // Découpages proposés (réglage `calendarSlotMinutes`). Une heure y est coupée en 4,
 // en 2, ou pas du tout.
 const SLOT_MINUTES_ALLOWED = [15, 30, 60];
@@ -646,21 +652,33 @@ export default function CalendarView({
                   <div
                     key={d.toISOString()}
                     className={cn(
-                      "sticky top-0 z-10 px-2 py-2 text-center border-b border-r bg-card",
+                      "sticky top-0 z-10 flex items-center justify-center gap-1.5 border-b border-r bg-card px-2 leading-none",
                       _today && "bg-primary/5"
                     )}
+                    style={{ height: DAY_HEADER_HEIGHT_PX }}
                   >
-                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                      {format(d, "EEEE", { locale: fr })}
-                    </div>
-                    <div
+                    {/* Nom abrégé : « mer. » plutôt que « mercredi ». Sur une seule
+                        ligne et dans une colonne de semaine, le nom entier suivi du
+                        numéro déborderait. */}
+                    <span
                       className={cn(
-                        "mt-0.5 inline-flex items-center justify-center text-base font-semibold",
-                        _today && "bg-primary text-primary-foreground w-7 h-7 rounded-full"
+                        "text-[10px] uppercase tracking-wider",
+                        _today ? "text-primary" : "text-muted-foreground"
+                      )}
+                    >
+                      {format(d, view === "day" ? "EEEE" : "EEE", { locale: fr })}
+                    </span>
+                    {/* La pastille ronde d'« aujourd'hui » est remplacée par la
+                        couleur : elle mesurait 28 px et fixait à elle seule la hauteur
+                        de la ligne. Le fond teinté de la cellule reste, lui. */}
+                    <span
+                      className={cn(
+                        "text-[11px] font-semibold tabular-nums",
+                        _today ? "text-primary" : "text-foreground"
                       )}
                     >
                       {format(d, "d", { locale: fr })}
-                    </div>
+                    </span>
                   </div>
                 );
               })}
