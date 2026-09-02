@@ -864,7 +864,12 @@ export default function CalendarView({
                   >
                     {/* Slot lines */}
                     {Array.from({ length: slotCount }).map((_, slotIdx) => {
-                      const isHourEnd = (slotIdx + 1) % 4 === 0;
+                      // Le trait appuyé marque la fin d'une HEURE, pas le quatrième
+                      // créneau. C'était « % 4 » en dur, ce qui ne tombait juste qu'en
+                      // découpage à 15 min : à 30 min le trait gras apparaissait une
+                      // heure sur deux, et à l'heure entière une fois sur quatre.
+                      const slotsPerHour = 60 / slotMinutes;
+                      const isHourEnd = (slotIdx + 1) % slotsPerHour === 0;
                       return (
                         <div
                           key={slotIdx}
