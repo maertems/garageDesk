@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { Plus, Search, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,10 +47,21 @@ const eur = (n: number) =>
 const TABS = ["articles", "labor", "vatRates"] as const;
 type Tab = (typeof TABS)[number];
 
-export default function CataloguePage({ isAdmin }: { isAdmin: boolean }) {
+export default function CataloguePage({
+  isAdmin,
+  initialArticles = [],
+  initialVatRates = [],
+}: {
+  isAdmin: boolean;
+  initialArticles?: Article[];
+  initialVatRates?: VatRate[];
+}) {
   const [tab, setTab] = useState<Tab>("articles");
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [vatRates, setVatRates] = useState<VatRate[]>([]);
+  // Catalogue et taux rendus par le serveur : ils étaient cherchés au montage, et
+  // les deux onglets annonçaient « Aucun article. » puis « Aucun taux de TVA. »
+  // le temps des appels.
+  const [articles, setArticles] = useState<Article[]>(initialArticles);
+  const [vatRates, setVatRates] = useState<VatRate[]>(initialVatRates);
   const [search, setSearch] = useState("");
 
   const [articleModal, setArticleModal] = useState<{ open: boolean; initial?: Article | null }>({
@@ -63,17 +74,6 @@ export default function CataloguePage({ isAdmin }: { isAdmin: boolean }) {
   });
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [deleteError, setDeleteError] = useState("");
-
-  useEffect(() => {
-    fetch("/api/proxy/articles")
-      .then((r) => r.json())
-      .then((d) => setArticles(Array.isArray(d) ? d : []))
-      .catch(() => {});
-    fetch("/api/proxy/vatRates")
-      .then((r) => r.json())
-      .then((d) => setVatRates(Array.isArray(d) ? d : []))
-      .catch(() => {});
-  }, []);
 
   const filteredArticles = useMemo(() => {
     // Les tarifs de main d'œuvre (M1..T3) ont leur propre onglet — on ne les

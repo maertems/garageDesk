@@ -15,12 +15,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LoadError } from "@/components/ui/load-error";
 import { PageHeader, PageBody } from "@/components/layout/PageHeader";
 import LoanReservationForm from "./LoanReservationForm";
 import LoanFleetCalendar from "./LoanFleetCalendar";
 import VehicleLabel, { VEHICLE_COL, VEHICLE_COL_INNER } from "./VehicleLabel";
 
-type LoanVehicle = {
+export type LoanVehicle = {
   id: number;
   brand?: string;
   model?: string;
@@ -29,7 +30,7 @@ type LoanVehicle = {
   mileage?: number;
   active?: boolean;
 };
-type LoanReservation = {
+export type LoanReservation = {
   id: number;
   loanVehicleId: number;
   clientId: number;
@@ -86,9 +87,11 @@ function loanVehicleParts(r: LoanReservation): { label: string; plate?: string }
 export default function LoanVehiclesSection({
   initialVehicles = [],
   initialReservations = [],
+  erreur = false,
 }: {
   initialVehicles?: LoanVehicle[];
   initialReservations?: LoanReservation[];
+  erreur?: boolean;
 } = {}) {
   const [vehicles, setVehicles] = useState<LoanVehicle[]>(initialVehicles);
   const [reservations, setReservations] = useState<LoanReservation[]>(initialReservations);
@@ -106,17 +109,6 @@ export default function LoanVehiclesSection({
   const currentPage = Math.min(reservationPage, pageCount - 1);
   const pageStart = currentPage * RESERVATIONS_PER_PAGE;
   const pagedReservations = reservations.slice(pageStart, pageStart + RESERVATIONS_PER_PAGE);
-
-  useEffect(() => {
-    fetch("/api/proxy/loanVehicles")
-      .then((r) => r.json())
-      .then((d) => setVehicles(Array.isArray(d) ? d : []))
-      .catch(() => {});
-    fetch("/api/proxy/loanReservations")
-      .then((r) => r.json())
-      .then((d) => setReservations(Array.isArray(d) ? d : []))
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     const newRes = searchParams.get("newReservation");
@@ -199,7 +191,9 @@ export default function LoanVehiclesSection({
         {/* Réservations */}
         <section>
           <h2 className="text-base font-semibold mb-3">Réservations</h2>
-          {reservations.length === 0 ? (
+          {erreur ? (
+            <LoadError quoi="La liste des réservations" />
+          ) : reservations.length === 0 ? (
             <EmptyState
               icon={<CalendarRange className="h-5 w-5" />}
               title="Aucune réservation"
@@ -349,7 +343,9 @@ export default function LoanVehiclesSection({
                   </Link>
                 </Button>
               </div>
-              {vehicles.length === 0 ? (
+              {erreur ? (
+                <LoadError quoi="La flotte de véhicules de prêt" />
+              ) : vehicles.length === 0 ? (
                 <EmptyState
                   icon={<KeyRound className="h-5 w-5" />}
                   title="Aucun véhicule de prêt"

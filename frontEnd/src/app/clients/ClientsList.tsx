@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LoadError } from "@/components/ui/load-error";
 import { PageHeader, PageBody } from "@/components/layout/PageHeader";
 import ClientModal from "./ClientModal";
 import ClientFormModal from "./ClientFormModal";
@@ -39,7 +40,13 @@ function SortIcon({ active, order }: { active: boolean; order: "asc" | "desc" })
   );
 }
 
-export default function ClientsList({ initialClients }: { initialClients: Client[] }) {
+export default function ClientsList({
+  initialClients,
+  erreur = false,
+}: {
+  initialClients: Client[];
+  erreur?: boolean;
+}) {
   const [clients, setClients] = useState(initialClients);
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<SortKey>("name");
@@ -130,7 +137,9 @@ export default function ClientsList({ initialClients }: { initialClients: Client
       />
       <PageBody>
 
-        {sorted.length === 0 ? (
+        {erreur ? (
+          <LoadError quoi="La liste des clients" />
+        ) : sorted.length === 0 ? (
           <EmptyState
             icon={<Users className="h-5 w-5" />}
             title={search ? "Aucun résultat" : "Aucun client"}

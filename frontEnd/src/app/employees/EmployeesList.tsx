@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { Plus, Trash2, UsersRound } from "lucide-react";
 import { getLabel, employeeCategoryLabels } from "@/lib/labels";
@@ -22,14 +22,9 @@ type Employee = { id: number; firstName: string; lastName: string; category: str
 export default function EmployeesList({ initialEmployees = [] }: { initialEmployees?: Employee[] }) {
   const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
 
-  useEffect(() => {
-    if (initialEmployees.length > 0) return;
-    fetch("/api/proxy/employees")
-      .then((r) => r.json())
-      .then((d) => setEmployees(Array.isArray(d) ? d : []))
-      .catch(() => {});
-  }, [initialEmployees.length]);
-
+  // Aucun repli qui irait chercher la liste au montage : il ne se déclenchait que
+  // sur une liste initiale vide, c'est-à-dire précisément quand l'écran affichait
+  // « Aucun salarié » avant de se remplir.
   async function handleDelete(id: number) {
     if (!confirm("Supprimer ce salarié ?")) return;
     const res = await fetch(`/api/proxy/employees/${id}`, { method: "DELETE" });

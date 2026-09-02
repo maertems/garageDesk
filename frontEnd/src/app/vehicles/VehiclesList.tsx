@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { Car, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,11 +13,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LoadError } from "@/components/ui/load-error";
 import { PageHeader, PageBody } from "@/components/layout/PageHeader";
 import VehicleModal from "./VehicleModal";
 import VehicleFormModal from "./VehicleFormModal";
 
-type Vehicle = {
+export type Vehicle = {
   id: number;
   clientId: number;
   brand?: string | null;
@@ -35,19 +36,21 @@ function formatDate(d: string | null | undefined): string {
   return `${day}/${m}/${y}`;
 }
 
-export default function VehiclesList({ initialVehicles = [] }: { initialVehicles?: Vehicle[] }) {
+export default function VehiclesList({
+  initialVehicles = [],
+  erreur = false,
+}: {
+  initialVehicles?: Vehicle[];
+  erreur?: boolean;
+}) {
+  // La liste vient du serveur. Le repli qui allait la chercher au montage a été
+  // retiré : il ne se déclenchait que sur une liste initiale vide, c'est-à-dire
+  // précisément dans le cas où l'écran affichait « Aucun véhicule » avant de se
+  // remplir.
   const [vehicles, setVehicles] = useState<Vehicle[]>(initialVehicles);
   const [search, setSearch] = useState("");
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
   const [newVehicleOpen, setNewVehicleOpen] = useState(false);
-
-  useEffect(() => {
-    if (initialVehicles.length > 0) return;
-    fetch("/api/proxy/vehicles")
-      .then((r) => r.json())
-      .then((d) => setVehicles(Array.isArray(d) ? d : []))
-      .catch(() => {});
-  }, [initialVehicles.length]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return vehicles;
@@ -95,7 +98,9 @@ export default function VehiclesList({ initialVehicles = [] }: { initialVehicles
         }
       />
       <PageBody>
-        {vehicles.length === 0 ? (
+        {erreur ? (
+          <LoadError quoi="La liste des véhicules" />
+        ) : vehicles.length === 0 ? (
           <EmptyState
             icon={<Car className="h-5 w-5" />}
             title="Aucun véhicule"

@@ -36,9 +36,15 @@ type LeaveRequest = {
 };
 type Employee = { id: number; firstName: string; lastName: string };
 
-export default function LeaveRequestsList({ initialRequests = [] }: { initialRequests?: LeaveRequest[] }) {
+export default function LeaveRequestsList({
+  initialRequests = [],
+  initialEmployees = [],
+}: {
+  initialRequests?: LeaveRequest[];
+  initialEmployees?: Employee[];
+}) {
   const [requests, setRequests] = useState<LeaveRequest[]>(initialRequests);
-  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
   const [showForm, setShowForm] = useState(false);
@@ -46,17 +52,9 @@ export default function LeaveRequestsList({ initialRequests = [] }: { initialReq
   const [newStart, setNewStart] = useState("");
   const [newEnd, setNewEnd] = useState("");
 
-  useEffect(() => {
-    fetch("/api/proxy/leaveRequests")
-      .then((r) => r.json())
-      .then((d) => setRequests(Array.isArray(d) ? d : []))
-      .catch(() => {});
-    fetch("/api/proxy/employees")
-      .then((r) => r.json())
-      .then((d) => setEmployees(Array.isArray(d) ? d : []))
-      .catch(() => {});
-  }, []);
-
+  // Les deux appels du montage ont disparu : ils rechargeaient une liste que le
+  // serveur venait de rendre, et le formulaire s'ouvrait sur un choix de salariés
+  // vide le temps du second.
   const filtered = requests.filter((r) => {
     const start = new Date(r.startDate);
     const end = new Date(r.endDate);

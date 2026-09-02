@@ -16,7 +16,7 @@ import {
   isToday,
 } from "date-fns";
 import { fr } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Plus, CalendarDays } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, CalendarDays, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -47,7 +47,7 @@ import {
   useDraggable,
 } from "@dnd-kit/core";
 
-type Appointment = {
+export type Appointment = {
   id: number;
   clientId?: number | null;
   vehicleId?: number | null;
@@ -106,6 +106,14 @@ type CalendarViewProps = {
   dayStart: string;
   dayEnd: string;
   defaultDurationMins?: number;
+  // Découpage et hauteur de l'heure : ils viennent du serveur, comme les autres
+  // réglages de la grille. Les lire ici côté client faisait peindre la grille
+  // avec les valeurs par défaut du code, puis sauter à celles de l'utilisateur.
+  slotMinutes: number;
+  hourHeightPx: number;
+  // Rendez-vous de la période affichée au premier rendu, rendus par le serveur :
+  // la grille arrive garnie au lieu de se remplir une seconde plus tard.
+  initialAppointments?: Appointment[];
   categories: { id: number; code: string; color: string }[];
   statuses: { id: number; code: string; color: string }[];
   leaveRequests?: LeaveRequest[];
@@ -177,20 +185,6 @@ function computeOverlapColumnsPerGroup(
   return result;
 }
 
-// Hauteur d'une HEURE à l'écran, et non d'un bloc : c'est elle qui reste constante
-// quand on change le découpage. 88 px historiquement, soit 4 blocs de 22.
-const HOUR_HEIGHT_DEFAULT_PX = 88;
-// Hauteurs proposées, nommées côté réglages : petit 56, compact 68, normal 88,
-// large 112. La valeur stockée reste le nombre de pixels — la clé s'appelle
-// `calendarHourHeightPx` et le garage a déjà 68 enregistré ; passer au libellé aurait
-// silencieusement tout ramené au défaut.
-//
-// Toutes MULTIPLES DE 4, et ce n'est pas une coquetterie : la colonne des heures et
-// les lignes de la grille sont deux colonnes distinctes du DOM, et leur alignement
-// n'est exact que si la hauteur de l'heure se divise sans reste par 4 (blocs de
-// 15 min) et par 2 (blocs de 30). À 50 px, un bloc ferait 12,5 px et les traits se
-// décaleraient d'un pixel selon l'arrondi du navigateur.
-const HOUR_HEIGHT_ALLOWED_PX = [56, 68, 88, 112];
 // Hauteur de la ligne des jours. Elle occupait environ 60 px sur deux lignes, avec
 // une pastille ronde de 28 px les jours « aujourd'hui » qui imposait sa hauteur à
 // toute la ligne. Ramenée à 16 px sur une seule ligne, elle rendait le nom du jour
@@ -201,9 +195,6 @@ const DAY_HEADER_HEIGHT_PX = 32;
 // part et d'autre : à hauteur égale elle remplirait la cellule et ne se lirait plus
 // comme une pastille.
 const DAY_PILL_HEIGHT_PX = DAY_HEADER_HEIGHT_PX - 10;
-// Découpages proposés (réglage `calendarSlotMinutes`). Une heure y est coupée en 4,
-// en 2, ou pas du tout.
-const SLOT_MINUTES_ALLOWED = [15, 30, 60];
 // Hauteur minimale d'un bloc de rendez-vous, en pixels et NON en fraction de bloc :
 // avec des blocs d'une heure, une demi-hauteur de bloc ferait 44 px et exagérerait
 // grossièrement la durée d'un rendez-vous de quinze minutes.
@@ -341,6 +332,9 @@ export default function CalendarView({
   dayStart,
   dayEnd,
   defaultDurationMins = 15,
+  slotMinutes,
+  hourHeightPx,
+  initialAppointments = [],
   categories,
   statuses,
   leaveRequests = [],
@@ -348,7 +342,11 @@ export default function CalendarView({
 }: CalendarViewProps) {
   const [view, setView] = useState(initialView);
   const [baseDate, setBaseDate] = useState(new Date());
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>(initialAppointments);
+  // Vrai pendant un rechargement des RDV — changement de semaine, de vue, ou
+  // retour d'un enregistrement. La grille montre alors le rond qui tourne dans
+  // sa barre d'outils, au lieu de paraître vide sans rien dire.
+  const [chargementRdv, setChargementRdv] = useState(false);
   // Les prêts arrivaient uniquement par la prop rendue côté serveur : après
   // l'enregistrement d'un RDV, seuls les RDV étaient rechargés et la pastille de
   // prêt n'apparaissait qu'après un rechargement complet de la page. On en tient
@@ -361,39 +359,12 @@ export default function CalendarView({
   const [slotEnd, setSlotEnd] = useState<Date | null>(null);
   const [reservationFormOpen, setReservationFormOpen] = useState(false);
   const [editingReservationId, setEditingReservationId] = useState<number | null>(null);
-  const [defaultDurationMinsFromSettings, setDefaultDurationMinsFromSettings] =
-    useState<number>(defaultDurationMins);
-  // Découpage de l'heure dans la grille, réglé dans Paramètres → Calendrier.
-  const [slotMinutes, setSlotMinutes] = useState(15);
-  const [hourHeightPx, setHourHeightPx] = useState(HOUR_HEIGHT_DEFAULT_PX);
   const [activeDrag, setActiveDrag] = useState<{ apt: Appointment; heightPx: number } | null>(null);
   const router = useRouter();
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
-
-  useEffect(() => {
-    fetch("/api/proxy/settings")
-      .then((r) => r.json())
-      .then((settings: { key: string; value: string }[]) => {
-        const map: Record<string, string> = {};
-        if (Array.isArray(settings)) settings.forEach((s) => (map[s.key] = s.value));
-        const raw = map.calendarDefaultDurationMinutes ?? "15";
-        const parsed = parseInt(raw, 10);
-        const allowed = [15, 30, 60, 120, 240, 480];
-        setDefaultDurationMinsFromSettings(allowed.includes(parsed) ? parsed : 15);
-
-        const rawSlot = parseInt(map.calendarSlotMinutes ?? "15", 10);
-        setSlotMinutes(SLOT_MINUTES_ALLOWED.includes(rawSlot) ? rawSlot : 15);
-
-        const rawHour = parseInt(map.calendarHourHeightPx ?? "", 10);
-        setHourHeightPx(
-          HOUR_HEIGHT_ALLOWED_PX.includes(rawHour) ? rawHour : HOUR_HEIGHT_DEFAULT_PX
-        );
-      })
-      .catch(() => {});
-  }, []);
 
   const startMins = Math.floor(parseTime(dayStart) / 60) * 60;
   const endMins = Math.floor(parseTime(dayEnd) / 60) * 60;
@@ -431,12 +402,17 @@ export default function CalendarView({
     start.setHours(0, 0, 0, 0);
     const end = new Date(days[days.length - 1]);
     end.setHours(23, 59, 59, 999);
-    const res = await fetch(
-      `/api/proxy/appointments?start=${start.toISOString()}&end=${end.toISOString()}`
-    );
-    if (res.ok) {
-      const data = await res.json();
-      setAppointments(data);
+    setChargementRdv(true);
+    try {
+      const res = await fetch(
+        `/api/proxy/appointments?start=${start.toISOString()}&end=${end.toISOString()}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setAppointments(Array.isArray(data) ? data : []);
+      }
+    } finally {
+      setChargementRdv(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, baseDate.getTime(), days[0]?.getTime(), days[days.length - 1]?.getTime()]);
@@ -464,7 +440,7 @@ export default function CalendarView({
     const [h, m] = [Math.floor(startMins / 60), startMins % 60];
     start.setHours(h, m + minutesFromStart, 0, 0);
     const end = new Date(start);
-    end.setMinutes(end.getMinutes() + defaultDurationMinsFromSettings);
+    end.setMinutes(end.getMinutes() + defaultDurationMins);
     setSlotStart(start);
     setSlotEnd(end);
     setEditingId(null);
@@ -624,6 +600,15 @@ export default function CalendarView({
             <span className="text-base font-semibold tracking-tight first-letter:capitalize">
               {titleText}
             </span>
+            {/* Les RDV d'une nouvelle période arrivent par un appel : sans ce
+                témoin, la grille paraît simplement vide pendant l'attente. */}
+            {chargementRdv && (
+              <Loader2
+                className="h-4 w-4 animate-spin text-muted-foreground motion-reduce:animate-none"
+                role="status"
+                aria-label="Chargement des rendez-vous"
+              />
+            )}
           </div>
 
           <div className="ml-auto flex items-center gap-2">
@@ -981,7 +966,7 @@ export default function CalendarView({
             initialEnd={slotEnd || undefined}
             categories={categories}
             statuses={statuses}
-            defaultDurationMins={defaultDurationMinsFromSettings}
+            defaultDurationMins={defaultDurationMins}
             onClose={handleFormClose}
             onSaved={handleFormClose}
           />
