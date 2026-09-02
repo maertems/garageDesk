@@ -202,9 +202,20 @@ const SLOT_MINUTES_ALLOWED = [15, 30, 60];
 const MIN_EVENT_HEIGHT_PX = 11;
 const APPOINTMENT_STATUS_BORDER_PX = 6;
 const SLOT_CLICK_RIGHT_MARGIN_PX = 24;
-const PRET_BOX_HEIGHT_PX = 22;
-const ABSENCES_BOX_HEIGHT_PX = 24;
-const PRET_ABSENCES_ROW_HEIGHT_PX = 8 + ABSENCES_BOX_HEIGHT_PX + 8 + PRET_BOX_HEIGHT_PX + 8;
+// Ligne « Prêt · Absences » : deux lignes empilées, absences puis prêts. Resserrée
+// de 70 à 42 px — 8/24/8/22/8 auparavant. Le texte reste en 11 px, donc lisible ;
+// c'étaient les marges et l'écart qui coûtaient, pas le contenu.
+const PRET_ABSENCES_PAD_PX = 2;
+const PRET_ABSENCES_GAP_PX = 2;
+const PRET_BOX_HEIGHT_PX = 18;
+const ABSENCES_BOX_HEIGHT_PX = 18;
+// Largeurs fixes, et NON déduites des hauteurs comme elles l'étaient (× 4 et × 2) :
+// resserrer la hauteur rétrécissait alors les pastilles et tronquait les prénoms.
+const ABSENCES_BOX_WIDTH_PX = 96;
+const PRET_BOX_WIDTH_PX = 44;
+const PRET_ABSENCES_ROW_HEIGHT_PX =
+  PRET_ABSENCES_PAD_PX + ABSENCES_BOX_HEIGHT_PX + PRET_ABSENCES_GAP_PX +
+  PRET_BOX_HEIGHT_PX + PRET_ABSENCES_PAD_PX;
 
 // ─── Appointment block draggable ───────────────────────────────────────────────
 function DraggableAptBlock({
@@ -708,10 +719,15 @@ export default function CalendarView({
                   <div
                     key={day.toISOString()}
                     className={cn(
-                      "border-b border-r flex flex-col gap-2 py-1.5 px-1.5 bg-secondary/30",
+                      "border-b border-r flex flex-col px-1.5 bg-secondary/30",
                       isToday(day) && "bg-primary/5"
                     )}
-                    style={{ minHeight: PRET_ABSENCES_ROW_HEIGHT_PX }}
+                    style={{
+                      minHeight: PRET_ABSENCES_ROW_HEIGHT_PX,
+                      paddingTop: PRET_ABSENCES_PAD_PX,
+                      paddingBottom: PRET_ABSENCES_PAD_PX,
+                      rowGap: PRET_ABSENCES_GAP_PX,
+                    }}
                   >
                     <div
                       className="flex flex-wrap items-center gap-1"
@@ -722,7 +738,7 @@ export default function CalendarView({
                           key={`${day.toISOString()}-${lr.id}`}
                           className="flex items-center justify-center rounded text-[11px] font-medium px-1 overflow-hidden whitespace-nowrap"
                           style={{
-                            width: ABSENCES_BOX_HEIGHT_PX * 4,
+                            width: ABSENCES_BOX_WIDTH_PX,
                             height: ABSENCES_BOX_HEIGHT_PX,
                             background: "rgba(217, 119, 6, 0.15)",
                             color: "rgb(146, 64, 14)",
@@ -751,7 +767,7 @@ export default function CalendarView({
                           }}
                           className="flex items-center justify-center rounded text-[11px] font-semibold cursor-pointer transition-opacity hover:opacity-80"
                           style={{
-                            width: PRET_BOX_HEIGHT_PX * 2,
+                            width: PRET_BOX_WIDTH_PX,
                             height: PRET_BOX_HEIGHT_PX,
                             background: "rgba(5, 150, 105, 0.15)",
                             color: "rgb(6, 95, 70)",
@@ -763,9 +779,6 @@ export default function CalendarView({
                           {r.loanVehicleUniqueNumber ?? `#${r.loanVehicleId}`}
                         </button>
                       ))}
-                      {loansOnDay.length === 0 && leavesOnDay.length === 0 && (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
                     </div>
                   </div>
                 );
