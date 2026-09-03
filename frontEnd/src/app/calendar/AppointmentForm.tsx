@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { format, addMinutes, parseISO, differenceInMinutes } from "date-fns";
 import { AlertTriangle, FileText, Loader2, Plus, Trash2 } from "lucide-react";
 import { getLabel, appointmentCategoryLabels, appointmentStatusLabels } from "@/lib/labels";
@@ -129,8 +129,15 @@ export default function AppointmentForm({
   const [notificationWarnings, setNotificationWarnings] = useState<string[] | null>(null);
   const [showClientModal, setShowClientModal] = useState(false);
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
+  // Position dans la liste des suggestions, pour la navigation au clavier.
+  // -1 signifie « aucune ligne visée » : la liste s'ouvre sans présélection, sinon
+  // une Entrée involontaire choisirait un client à la place de la saisie en cours.
+  const [clientIndexActif, setClientIndexActif] = useState(-1);
   const clientInputRef = useRef<HTMLInputElement>(null);
   const clientDropdownRef = useRef<HTMLDivElement>(null);
+  // Une référence par ligne, pour la ramener dans la partie visible : la liste est
+  // limitée à 15rem de hauteur et défile.
+  const clientOptionsRef = useRef<(HTMLButtonElement | null)[]>([]);
 
   const endDateTime = useMemo(() => {
     if (!startDate || !startTime) return null;
@@ -240,6 +247,80 @@ export default function AppointmentForm({
     }
     return slice;
   }, [clients, clientSearch, editingId, clientId]);
+
+  // Choix d'un client, par la souris comme par le clavier : le même chemin pour les
+  // deux, sinon l'un des deux finit par oublier de remettre le véhicule à jour.
+  const choisirClient = useCallback(
+    (c: Client) => {
+      setClientId(c.id);
+      setClientSearch("");
+      setClientDropdownOpen(false);
+      setClientIndexActif(-1);
+      if (c.vehicles?.length) setVehicleId(c.vehicles[0].id);
+      else setVehicleId("");
+    },
+    []
+  );
+
+  // La ligne visée doit rester visible. `block: "nearest"` fait défiler du strict
+  // minimum : avec `"center"`, la liste sautait à chaque flèche.
+  useEffect(() => {
+    if (clientIndexActif < 0) return;
+    clientOptionsRef.current[clientIndexActif]?.scrollIntoView({ block: "nearest" });
+  }, [clientIndexActif]);
+
+  // Une liste plus courte que la position visée laisserait un index dans le vide.
+  useEffect(() => {
+    if (clientIndexActif >= filteredClients.length) setClientIndexActif(-1);
+  }, [filteredClients.length, clientIndexActif]);
+
+  /** Flèches, Entrée et Échap sur le champ de recherche client. */
+  const toucheClient = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const assezLong = clientSearch.trim().length >= MIN_CLIENT_SEARCH_CHARS;
+
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      // Sans cela, le curseur file au début ou à la fin du texte saisi.
+      e.preventDefault();
+      if (!clientDropdownOpen && assezLong) {
+        setClientDropdownOpen(true);
+        setClientIndexActif(e.key === "ArrowDown" ? 0 : filteredClients.length - 1);
+        return;
+      }
+      if (!clientDropdownOpen || filteredClients.length === 0) return;
+      setClientIndexActif((i) => {
+        const n = filteredClients.length;
+        if (e.key === "ArrowDown") return i < 0 ? 0 : (i + 1) % n;
+        return i <= 0 ? n - 1 : i - 1;
+      });
+      return;
+    }
+
+    if (e.key === "Enter") {
+      // Le champ est dans un formulaire : sans preventDefault, Entrée enregistrerait
+      // le rendez-vous au lieu de choisir le client.
+      if (clientDropdownOpen && clientIndexActif >= 0 && filteredClients[clientIndexActif]) {
+        e.preventDefault();
+        choisirClient(filteredClients[clientIndexActif]);
+      }
+      return;
+    }
+
+    if (e.key === "Escape" && clientDropdownOpen) {
+      // La boîte de dialogue se ferme elle aussi sur Échap : il faut retenir
+      // l'événement, sinon fermer la liste ferait disparaître tout le formulaire et
+      // la saisie avec.
+      e.preventDefault();
+      e.stopPropagation();
+      setClientDropdownOpen(false);
+      setClientIndexActif(-1);
+      return;
+    }
+
+    if (e.key === "Tab" && clientDropdownOpen) {
+      setClientDropdownOpen(false);
+      setClientIndexActif(-1);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -523,6 +604,7 @@ export default function AppointmentForm({
                         onChange={(e) => {
                           setClientSearch(e.target.value);
                           setClientId("");
+                          setClientIndexActif(-1);
                           setClientDropdownOpen(
                             e.target.value.trim().length >= MIN_CLIENT_SEARCH_CHARS
                           );
@@ -531,29 +613,48 @@ export default function AppointmentForm({
                           if (clientSearch.trim().length >= MIN_CLIENT_SEARCH_CHARS)
                             setClientDropdownOpen(true);
                         }}
+                        onKeyDown={toucheClient}
                         placeholder="Rechercher un client (min. 3 caractères)..."
                         autoComplete="off"
+                        role="combobox"
+                        aria-expanded={clientDropdownOpen}
+                        aria-controls="liste-clients"
+                        aria-autocomplete="list"
+                        aria-activedescendant={
+                          clientIndexActif >= 0 ? `client-option-${clientIndexActif}` : undefined
+                        }
                       />
                       {clientDropdownOpen &&
                         clientSearch.trim().length >= MIN_CLIENT_SEARCH_CHARS && (
-                          <div className="absolute top-full left-0 right-0 mt-1 max-h-60 overflow-y-auto rounded-md border bg-popover shadow-md z-50 scrollbar-thin">
+                          <div
+                            id="liste-clients"
+                            role="listbox"
+                            className="absolute top-full left-0 right-0 mt-1 max-h-60 overflow-y-auto rounded-md border bg-popover shadow-md z-50 scrollbar-thin"
+                          >
                             {filteredClients.length === 0 ? (
                               <div className="px-3 py-2.5 text-sm text-muted-foreground">
                                 Aucun client trouvé
                               </div>
                             ) : (
-                              filteredClients.map((c) => (
+                              filteredClients.map((c, i) => (
                                 <button
                                   key={c.id}
-                                  type="button"
-                                  className="block w-full px-3 py-2 text-left text-sm hover:bg-accent"
-                                  onClick={() => {
-                                    setClientId(c.id);
-                                    setClientSearch("");
-                                    setClientDropdownOpen(false);
-                                    if (c.vehicles?.length) setVehicleId(c.vehicles[0].id);
-                                    else setVehicleId("");
+                                  id={`client-option-${i}`}
+                                  role="option"
+                                  aria-selected={i === clientIndexActif}
+                                  ref={(el) => {
+                                    clientOptionsRef.current[i] = el;
                                   }}
+                                  type="button"
+                                  className={cn(
+                                    "block w-full px-3 py-2 text-left text-sm hover:bg-accent",
+                                    i === clientIndexActif && "bg-accent"
+                                  )}
+                                  // La souris reprend la main sur le clavier : survoler une
+                                  // ligne en fait la ligne visée, sinon deux lignes
+                                  // paraîtraient choisies en même temps.
+                                  onMouseEnter={() => setClientIndexActif(i)}
+                                  onClick={() => choisirClient(c)}
                                 >
                                   {c.lastName} {c.firstName}
                                 </button>
