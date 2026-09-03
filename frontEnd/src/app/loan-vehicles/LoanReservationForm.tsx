@@ -9,6 +9,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import ClientPicker from "@/components/clients/ClientPicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -69,89 +70,6 @@ const SECTION_HEADER = "px-4 py-2 border-b bg-secondary/40 rounded-t-lg";
 const SECTION_TITLE = "text-xs font-semibold uppercase tracking-wider text-muted-foreground";
 const SECTION_CARD = "rounded-lg border bg-card";
 
-/* ── Combobox client ───────────────────────────────────────────────── */
-function ClientCombobox({
-  clients,
-  value,
-  onChange,
-}: {
-  clients: Client[];
-  value: number | "";
-  onChange: (id: number | "") => void;
-}) {
-  const [inputValue, setInputValue] = useState("");
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Sync display label when value is set externally
-  useEffect(() => {
-    if (value === "") {
-      setInputValue("");
-    } else {
-      const found = clients.find((c) => c.id === value);
-      if (found) setInputValue(clientLabel(found));
-    }
-  }, [value, clients]);
-
-  const filtered = useMemo(() => {
-    const q = inputValue.toLowerCase();
-    if (!q) return clients.slice(0, 40);
-    return clients
-      .filter((c) => clientLabel(c).toLowerCase().includes(q))
-      .slice(0, 40);
-  }, [clients, inputValue]);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        // Si rien sélectionné, réaffiche le nom du client actuel
-        if (value !== "") {
-          const found = clients.find((c) => c.id === value);
-          if (found) setInputValue(clientLabel(found));
-        }
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [value, clients]);
-
-  return (
-    <div ref={containerRef} className="relative">
-      <Input
-        type="text"
-        placeholder="Rechercher un client…"
-        value={inputValue}
-        autoComplete="off"
-        onChange={(e) => {
-          setInputValue(e.target.value);
-          onChange(""); // désélectionne jusqu'au choix
-          setOpen(true);
-        }}
-        onFocus={() => setOpen(true)}
-      />
-      {open && filtered.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 rounded-md border bg-popover shadow-lg max-h-52 overflow-y-auto">
-          {filtered.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              className={`w-full text-left px-3 py-2 text-sm hover:bg-accent ${value === c.id ? "font-semibold" : ""}`}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                onChange(c.id);
-                setInputValue(clientLabel(c));
-                setOpen(false);
-              }}
-            >
-              {clientLabel(c)}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ── Formulaire principal ──────────────────────────────────────────── */
 type LoanReservationFormProps = {
@@ -358,10 +276,15 @@ export default function LoanReservationForm({
                   ) : (
                     <div className="space-y-1.5">
                       <Label>Client *</Label>
-                      <ClientCombobox
+                      <ClientPicker
                         clients={clients}
                         value={clientId}
-                        onChange={setClientId}
+                        onChange={(c) => setClientId(c?.id ?? "")}
+                        label={clientLabel}
+                        // Ce formulaire proposait toute la liste dès la mise au point,
+                        // sans minimum de saisie : on le conserve.
+                        minChars={0}
+                        maxItems={40}
                       />
                     </div>
                   )}

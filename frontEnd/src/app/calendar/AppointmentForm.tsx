@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { format, addMinutes, parseISO, differenceInMinutes } from "date-fns";
 import { AlertTriangle, FileText, Loader2, Plus, Trash2 } from "lucide-react";
 import { getLabel, appointmentCategoryLabels, appointmentStatusLabels } from "@/lib/labels";
@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import ClientForm from "@/app/clients/ClientForm";
+import ClientPicker from "@/components/clients/ClientPicker";
 
 type Client = {
   id: number;
@@ -97,7 +98,6 @@ export default function AppointmentForm({
   onClose,
   onSaved,
 }: AppointmentFormProps) {
-  const [clientSearch, setClientSearch] = useState("");
   const [clients, setClients] = useState<Client[]>([]);
   const [clientId, setClientId] = useState<number | "">("");
   const [vehicleId, setVehicleId] = useState<number | "">("");
@@ -128,16 +128,6 @@ export default function AppointmentForm({
   // branché — le dialogue était du code mort. Il sert maintenant à l'après.
   const [notificationWarnings, setNotificationWarnings] = useState<string[] | null>(null);
   const [showClientModal, setShowClientModal] = useState(false);
-  const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
-  // Position dans la liste des suggestions, pour la navigation au clavier.
-  // -1 signifie « aucune ligne visée » : la liste s'ouvre sans présélection, sinon
-  // une Entrée involontaire choisirait un client à la place de la saisie en cours.
-  const [clientIndexActif, setClientIndexActif] = useState(-1);
-  const clientInputRef = useRef<HTMLInputElement>(null);
-  const clientDropdownRef = useRef<HTMLDivElement>(null);
-  // Une référence par ligne, pour la ramener dans la partie visible : la liste est
-  // limitée à 15rem de hauteur et défile.
-  const clientOptionsRef = useRef<(HTMLButtonElement | null)[]>([]);
 
   const endDateTime = useMemo(() => {
     if (!startDate || !startTime) return null;
@@ -232,95 +222,6 @@ export default function AppointmentForm({
     return loanReservations.find((r) => r.appointmentId === editingId)?.id ?? null;
   }, [loanReservations, editingId]);
 
-  const filteredClients = useMemo(() => {
-    const term = clientSearch.trim().toLowerCase();
-    if (term.length < MIN_CLIENT_SEARCH_CHARS) return [];
-    const base = clients.filter(
-      (c) =>
-        `${c.firstName} ${c.lastName}`.toLowerCase().includes(term) ||
-        `${c.lastName} ${c.firstName}`.toLowerCase().includes(term)
-    );
-    const slice = base.slice(0, 20);
-    if (editingId && clientId && !slice.some((c) => c.id === clientId)) {
-      const selected = clients.find((c) => c.id === clientId);
-      if (selected) return [selected, ...slice.filter((c) => c.id !== selected.id)].slice(0, 20);
-    }
-    return slice;
-  }, [clients, clientSearch, editingId, clientId]);
-
-  // Choix d'un client, par la souris comme par le clavier : le même chemin pour les
-  // deux, sinon l'un des deux finit par oublier de remettre le véhicule à jour.
-  const choisirClient = useCallback(
-    (c: Client) => {
-      setClientId(c.id);
-      setClientSearch("");
-      setClientDropdownOpen(false);
-      setClientIndexActif(-1);
-      if (c.vehicles?.length) setVehicleId(c.vehicles[0].id);
-      else setVehicleId("");
-    },
-    []
-  );
-
-  // La ligne visée doit rester visible. `block: "nearest"` fait défiler du strict
-  // minimum : avec `"center"`, la liste sautait à chaque flèche.
-  useEffect(() => {
-    if (clientIndexActif < 0) return;
-    clientOptionsRef.current[clientIndexActif]?.scrollIntoView({ block: "nearest" });
-  }, [clientIndexActif]);
-
-  // Une liste plus courte que la position visée laisserait un index dans le vide.
-  useEffect(() => {
-    if (clientIndexActif >= filteredClients.length) setClientIndexActif(-1);
-  }, [filteredClients.length, clientIndexActif]);
-
-  /** Flèches, Entrée et Échap sur le champ de recherche client. */
-  const toucheClient = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    const assezLong = clientSearch.trim().length >= MIN_CLIENT_SEARCH_CHARS;
-
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      // Sans cela, le curseur file au début ou à la fin du texte saisi.
-      e.preventDefault();
-      if (!clientDropdownOpen && assezLong) {
-        setClientDropdownOpen(true);
-        setClientIndexActif(e.key === "ArrowDown" ? 0 : filteredClients.length - 1);
-        return;
-      }
-      if (!clientDropdownOpen || filteredClients.length === 0) return;
-      setClientIndexActif((i) => {
-        const n = filteredClients.length;
-        if (e.key === "ArrowDown") return i < 0 ? 0 : (i + 1) % n;
-        return i <= 0 ? n - 1 : i - 1;
-      });
-      return;
-    }
-
-    if (e.key === "Enter") {
-      // Le champ est dans un formulaire : sans preventDefault, Entrée enregistrerait
-      // le rendez-vous au lieu de choisir le client.
-      if (clientDropdownOpen && clientIndexActif >= 0 && filteredClients[clientIndexActif]) {
-        e.preventDefault();
-        choisirClient(filteredClients[clientIndexActif]);
-      }
-      return;
-    }
-
-    if (e.key === "Escape" && clientDropdownOpen) {
-      // La boîte de dialogue se ferme elle aussi sur Échap : il faut retenir
-      // l'événement, sinon fermer la liste ferait disparaître tout le formulaire et
-      // la saisie avec.
-      e.preventDefault();
-      e.stopPropagation();
-      setClientDropdownOpen(false);
-      setClientIndexActif(-1);
-      return;
-    }
-
-    if (e.key === "Tab" && clientDropdownOpen) {
-      setClientDropdownOpen(false);
-      setClientIndexActif(-1);
-    }
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -353,21 +254,6 @@ export default function AppointmentForm({
     setVehicleId(vehicles[0].id);
   }, [editingId, selectedClient, vehicles, vehicleId]);
 
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (
-        clientDropdownRef.current &&
-        !clientDropdownRef.current.contains(e.target as Node) &&
-        clientInputRef.current &&
-        !clientInputRef.current.contains(e.target as Node)
-      ) {
-        setClientDropdownOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   function handleClientCreated(newClient: Record<string, unknown>) {
     setShowClientModal(false);
     const id = typeof newClient?.id === "number" ? newClient.id : null;
@@ -377,8 +263,6 @@ export default function AppointmentForm({
       .then((data) => {
         setClients(Array.isArray(data) ? data : []);
         setClientId(id);
-        setClientSearch("");
-        setClientDropdownOpen(false);
       })
       .catch(() => {});
   }
@@ -508,9 +392,6 @@ export default function AppointmentForm({
     onSaved();
   }
 
-  const clientDisplayValue = selectedClient
-    ? `${selectedClient.lastName} ${selectedClient.firstName}`
-    : clientSearch;
 
   const sortedCategories = [...categories].sort((a, b) =>
     a.code === "mechanic" ? -1 : b.code === "mechanic" ? 1 : 0
@@ -595,73 +476,27 @@ export default function AppointmentForm({
                 </header>
                 <div className="p-4 space-y-3">
                   <div className="flex gap-2 min-w-0">
-                    <div className="relative flex-1 min-w-0" ref={clientDropdownRef}>
-                      <Input
-                        ref={clientInputRef}
-                        type="text"
-                        value={clientDisplayValue}
-                        className="truncate"
-                        onChange={(e) => {
-                          setClientSearch(e.target.value);
-                          setClientId("");
-                          setClientIndexActif(-1);
-                          setClientDropdownOpen(
-                            e.target.value.trim().length >= MIN_CLIENT_SEARCH_CHARS
-                          );
+                    <div className="flex-1 min-w-0">
+                      <ClientPicker
+                        clients={clients}
+                        value={clientId}
+                        onChange={(c) => {
+                          setClientId(c?.id ?? "");
+                          // Le premier véhicule du client suit le choix ; sans client,
+                          // il n'y a plus de véhicule à proposer.
+                          setVehicleId(c?.vehicles?.[0]?.id ?? "");
                         }}
-                        onFocus={() => {
-                          if (clientSearch.trim().length >= MIN_CLIENT_SEARCH_CHARS)
-                            setClientDropdownOpen(true);
-                        }}
-                        onKeyDown={toucheClient}
-                        placeholder="Rechercher un client (min. 3 caractères)..."
-                        autoComplete="off"
-                        role="combobox"
-                        aria-expanded={clientDropdownOpen}
-                        aria-controls="liste-clients"
-                        aria-autocomplete="list"
-                        aria-activedescendant={
-                          clientIndexActif >= 0 ? `client-option-${clientIndexActif}` : undefined
+                        label={(c) => `${c.lastName} ${c.firstName}`}
+                        // Ce formulaire acceptait les deux ordres de saisie, et il est le
+                        // seul : on lui conserve ce comportement.
+                        haystack={(c) =>
+                          `${c.firstName} ${c.lastName} ${c.lastName} ${c.firstName}`
                         }
+                        minChars={MIN_CLIENT_SEARCH_CHARS}
+                        placeholder="Rechercher un client (min. 3 caractères)..."
+                        emptyLabel="Aucun client trouvé"
+                        inputClassName="truncate"
                       />
-                      {clientDropdownOpen &&
-                        clientSearch.trim().length >= MIN_CLIENT_SEARCH_CHARS && (
-                          <div
-                            id="liste-clients"
-                            role="listbox"
-                            className="absolute top-full left-0 right-0 mt-1 max-h-60 overflow-y-auto rounded-md border bg-popover shadow-md z-50 scrollbar-thin"
-                          >
-                            {filteredClients.length === 0 ? (
-                              <div className="px-3 py-2.5 text-sm text-muted-foreground">
-                                Aucun client trouvé
-                              </div>
-                            ) : (
-                              filteredClients.map((c, i) => (
-                                <button
-                                  key={c.id}
-                                  id={`client-option-${i}`}
-                                  role="option"
-                                  aria-selected={i === clientIndexActif}
-                                  ref={(el) => {
-                                    clientOptionsRef.current[i] = el;
-                                  }}
-                                  type="button"
-                                  className={cn(
-                                    "block w-full px-3 py-2 text-left text-sm hover:bg-accent",
-                                    i === clientIndexActif && "bg-accent"
-                                  )}
-                                  // La souris reprend la main sur le clavier : survoler une
-                                  // ligne en fait la ligne visée, sinon deux lignes
-                                  // paraîtraient choisies en même temps.
-                                  onMouseEnter={() => setClientIndexActif(i)}
-                                  onClick={() => choisirClient(c)}
-                                >
-                                  {c.lastName} {c.firstName}
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        )}
                     </div>
                     <Button
                       type="button"

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import ClientPicker from "@/components/clients/ClientPicker";
 import { PageHeader, PageBody } from "@/components/layout/PageHeader";
 import { documentTypeLabels } from "@/lib/labels";
 import LineEditor, { emptyLine, type LineDraft } from "@/app/facturation/_components/LineEditor";
@@ -60,8 +61,6 @@ export default function NewDocumentPage() {
   const [parentDoc, setParentDoc] = useState<ParentDoc | null>(null);
 
   const [clients, setClients] = useState<Client[]>([]);
-  const [clientSearch, setClientSearch] = useState("");
-  const [clientOpen, setClientOpen] = useState(false);
   const [clientId, setClientId] = useState<number | null>(null);
   const [vehicleId, setVehicleId] = useState<number | null>(null);
   const [kilometrage, setKilometrage] = useState("");
@@ -98,18 +97,8 @@ export default function NewDocumentPage() {
   }, [headerIdParam, parentDocumentIdParam]);
 
   const selectedClient = clients.find((c) => c.id === clientId) ?? null;
-  const filteredClients = useMemo(() => {
-    if (clientSearch.trim().length < 2) return [];
-    const q = clientSearch.toLowerCase();
-    return clients
-      .filter((c) => `${c.lastName} ${c.firstName ?? ""}`.toLowerCase().includes(q))
-      .slice(0, 30);
-  }, [clients, clientSearch]);
-
   function selectClient(c: Client) {
     setClientId(c.id);
-    setClientSearch(`${c.lastName.toUpperCase()} ${c.firstName ?? ""}`.trim());
-    setClientOpen(false);
     setVehicleId(c.vehicles?.[0]?.id ?? null);
   }
 
@@ -265,34 +254,23 @@ export default function NewDocumentPage() {
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Client et véhicule</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="flex gap-2">
-                  <div className="relative flex-1 min-w-0">
-                    <Input
-                      value={clientSearch}
-                      onChange={(e) => {
-                        setClientSearch(e.target.value);
-                        setClientOpen(true);
-                        setClientId(null);
+                  <div className="flex-1 min-w-0">
+                    <ClientPicker
+                      clients={clients}
+                      value={clientId}
+                      onChange={(c) => {
+                        if (c) selectClient(c);
+                        else {
+                          setClientId(null);
+                          setVehicleId(null);
+                        }
                       }}
-                      onFocus={() => setClientOpen(clientSearch.trim().length >= 2)}
+                      label={(c) => `${c.lastName.toUpperCase()} ${c.firstName ?? ""}`.trim()}
+                      // Ce formulaire ouvrait dès deux caractères, et lui seul.
+                      minChars={2}
+                      maxItems={30}
                       placeholder="Rechercher un client (min. 2 caractères)"
                     />
-                    {clientOpen && filteredClients.length > 0 && (
-                      <div className="absolute z-50 mt-1 w-full max-h-56 overflow-y-auto rounded-md border bg-popover shadow-md">
-                        {filteredClients.map((c) => (
-                          <button
-                            key={c.id}
-                            type="button"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              selectClient(c);
-                            }}
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
-                          >
-                            {c.lastName.toUpperCase()} {c.firstName ?? ""}
-                          </button>
-                        ))}
-                      </div>
-                    )}
                   </div>
                   <Button type="button" variant="outline" size="icon" onClick={() => setNewClientOpen(true)} aria-label="Nouveau client">
                     <Plus className="h-4 w-4" />

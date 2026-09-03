@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DialogFooter } from "@/components/ui/dialog";
+import ClientPicker from "@/components/clients/ClientPicker";
 
 type VehicleRecord = Record<string, unknown>;
 
@@ -41,86 +42,6 @@ function formatLicensePlate(raw: string): string {
   return s || raw.toUpperCase();
 }
 
-/* ── Combobox client ─────────────────────────────────────────────────── */
-function ClientCombobox({
-  clients,
-  value,
-  onChange,
-  disabled,
-}: {
-  clients: Client[];
-  value: number | "";
-  onChange: (id: number | "") => void;
-  disabled?: boolean;
-}) {
-  const [inputValue, setInputValue] = useState("");
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (value === "") { setInputValue(""); return; }
-    const found = clients.find((c) => c.id === value);
-    if (found) setInputValue(clientLabel(found));
-  }, [value, clients]);
-
-  const filtered = useMemo(() => {
-    const q = inputValue.toLowerCase();
-    if (inputValue.length < 3) return [];
-    if (!q) return clients.slice(0, 40);
-    return clients.filter((c) => clientLabel(c).toLowerCase().includes(q)).slice(0, 40);
-  }, [clients, inputValue]);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        if (value !== "") {
-          const found = clients.find((c) => c.id === value);
-          if (found) setInputValue(clientLabel(found));
-          else setInputValue("");
-        }
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [value, clients]);
-
-  return (
-    <div ref={containerRef} className="relative">
-      <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-        <Input
-          type="text"
-          placeholder="Rechercher un client…"
-          value={inputValue}
-          autoComplete="off"
-          disabled={disabled}
-          className="pl-8"
-          onChange={(e) => { setInputValue(e.target.value); onChange(""); setOpen(e.target.value.length >= 3); }}
-          onFocus={() => { if (inputValue.length >= 3) setOpen(true); }}
-        />
-      </div>
-      {open && filtered.length > 0 && (
-        <ul className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-md max-h-52 overflow-y-auto text-sm">
-          {filtered.map((c) => (
-            <li
-              key={c.id}
-              className="px-3 py-1.5 cursor-pointer hover:bg-accent"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                onChange(c.id);
-                setInputValue(clientLabel(c));
-                setOpen(false);
-              }}
-            >
-              {clientLabel(c)}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
 
 /* ── Formulaire principal ────────────────────────────────────────────── */
 export default function VehicleForm({ initial, onSaved, onClose, defaultClientId }: Props) {
@@ -227,10 +148,14 @@ export default function VehicleForm({ initial, onSaved, onClose, defaultClientId
         </header>
         <div className="p-4">
           <div className="space-y-1.5">
-            <ClientCombobox
+            <ClientPicker
               clients={clients}
               value={clientId}
-              onChange={setClientId}
+              onChange={(c) => setClientId(c?.id ?? "")}
+              label={clientLabel}
+              minChars={3}
+              maxItems={40}
+              withIcon
               disabled={!!id}
             />
             {id && (
