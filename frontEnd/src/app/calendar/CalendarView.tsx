@@ -114,6 +114,12 @@ type CalendarViewProps = {
   // Rendez-vous de la période affichée au premier rendu, rendus par le serveur :
   // la grille arrive garnie au lieu de se remplir une seconde plus tard.
   initialAppointments?: Appointment[];
+  // Bornes de ce que `initialAppointments` couvre, en ISO. Elles servent à ne PAS
+  // redemander au montage ce que le serveur vient d'envoyer : sans elles, chaque
+  // ouverture du calendrier refaisait un aller-retour complet pour le même
+  // résultat — visible comme un temps mort après l'affichage.
+  initialRangeStart?: string;
+  initialRangeEnd?: string;
   categories: { id: number; code: string; color: string }[];
   statuses: { id: number; code: string; color: string }[];
   leaveRequests?: LeaveRequest[];
@@ -335,6 +341,8 @@ export default function CalendarView({
   slotMinutes,
   hourHeightPx,
   initialAppointments = [],
+  initialRangeStart,
+  initialRangeEnd,
   categories,
   statuses,
   leaveRequests = [],
@@ -347,6 +355,8 @@ export default function CalendarView({
   // retour d'un enregistrement. La grille montre alors le rond qui tourne dans
   // sa barre d'outils, au lieu de paraître vide sans rien dire.
   const [chargementRdv, setChargementRdv] = useState(false);
+  // Vrai jusqu'au premier appel des rendez-vous, pour savoir s'il est superflu.
+  const premierChargement = useRef(true);
   // Les prêts arrivaient uniquement par la prop rendue côté serveur : après
   // l'enregistrement d'un RDV, seuls les RDV étaient rechargés et la pastille de
   // prêt n'apparaissait qu'après un rechargement complet de la page. On en tient
@@ -402,6 +412,20 @@ export default function CalendarView({
     start.setHours(0, 0, 0, 0);
     const end = new Date(days[days.length - 1]);
     end.setHours(23, 59, 59, 999);
+
+    // Au tout premier passage seulement : si le serveur a déjà envoyé cette
+    // période, on ne la redemande pas. Les rechargements suivants — changement de
+    // semaine, retour d'un enregistrement — passent toujours par le réseau.
+    if (premierChargement.current) {
+      premierChargement.current = false;
+      const couvert =
+        !!initialRangeStart &&
+        !!initialRangeEnd &&
+        start >= new Date(initialRangeStart) &&
+        end <= new Date(initialRangeEnd);
+      if (couvert) return;
+    }
+
     setChargementRdv(true);
     try {
       const res = await fetch(

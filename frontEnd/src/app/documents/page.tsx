@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { apiJson } from "@/lib/api";
+import { apiJson, verifierSession } from "@/lib/api";
 import DocumentsList from "./DocumentsList";
 
 export type BillListItem = {
@@ -23,11 +23,9 @@ export type BillListItem = {
 export default async function DocumentsPage() {
   const cookieStore = await cookies();
   const cookie = cookieStore.toString();
-  try {
-    await apiJson("/api/v1/auth/me", cookie);
-  } catch {
-    redirect("/login");
-  }
+  // Session lancée sans être attendue : les appels de données partent en même
+  // temps, et la redirection est décidée après eux (cf. verifierSession).
+  const session = verifierSession(cookie);
   let bills: BillListItem[] = [];
   try {
     const data = await apiJson<BillListItem[]>("/api/v1/bills", cookie);
@@ -35,6 +33,8 @@ export default async function DocumentsPage() {
   } catch {
     //
   }
+  if (!(await session)) redirect("/login");
+
   return (
     <Suspense>
       <DocumentsList initialBills={bills} />

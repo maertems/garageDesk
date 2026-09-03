@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect, notFound } from "next/navigation";
-import { apiJson } from "@/lib/api";
+import { apiJson, verifierSession } from "@/lib/api";
 import DocumentDetail from "./DocumentDetail";
 
 type Bill = {
@@ -64,11 +64,9 @@ export default async function DocumentDetailPage({ params }: { params: Promise<{
   const cookieStore = await cookies();
   const cookie = cookieStore.toString();
 
-  try {
-    await apiJson("/api/v1/auth/me", cookie);
-  } catch {
-    redirect("/login");
-  }
+  // Session lancée sans être attendue : les appels de données partent en même
+  // temps, et la redirection est décidée après eux (cf. verifierSession).
+  const session = verifierSession(cookie);
 
   let bill: Bill | null = null;
   try {
@@ -85,6 +83,8 @@ export default async function DocumentDetailPage({ params }: { params: Promise<{
       ? apiJson<VehicleInfo>(`/api/v1/vehicles/${bill.vehicleId}`, cookie).catch(() => null)
       : Promise.resolve(null),
   ]);
+
+  if (!(await session)) redirect("/login");
 
   return (
     <DocumentDetail

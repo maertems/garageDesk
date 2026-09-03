@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { apiJson } from "@/lib/api";
+import { apiJson, verifierSession } from "@/lib/api";
 import FacturationDocumentsList from "./FacturationDocumentsList";
 
 export type UnifiedDocKind =
@@ -76,11 +76,9 @@ type CreditNoteListItem = {
 export default async function FacturationPage() {
   const cookieStore = await cookies();
   const cookie = cookieStore.toString();
-  try {
-    await apiJson("/api/v1/auth/me", cookie);
-  } catch {
-    redirect("/login");
-  }
+  // Session lancée sans être attendue : les appels de données partent en même
+  // temps, et la redirection est décidée après eux (cf. verifierSession).
+  const session = verifierSession(cookie);
 
   const [documents, invoices, creditNotes] = await Promise.all([
     apiJson<DocumentListItem[]>("/api/v1/documents", cookie).catch(() => []),
@@ -138,6 +136,8 @@ export default async function FacturationPage() {
       href: `/facturation/avoirs/${cn.id}`,
     })),
   ];
+
+  if (!(await session)) redirect("/login");
 
   return (
     <Suspense>

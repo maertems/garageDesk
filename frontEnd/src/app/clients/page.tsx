@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { apiJson } from "@/lib/api";
+import { apiJson, verifierSession } from "@/lib/api";
 import ClientsList from "./ClientsList";
 
 type Client = { id: number; firstName: string; lastName: string; phone?: string; email?: string; city?: string; postalCode?: string; clientType: string };
@@ -8,11 +8,9 @@ type Client = { id: number; firstName: string; lastName: string; phone?: string;
 export default async function ClientsPage() {
   const cookieStore = await cookies();
   const cookie = cookieStore.toString();
-  try {
-    await apiJson("/api/v1/auth/me", cookie);
-  } catch {
-    redirect("/login");
-  }
+  // Session lancée sans être attendue : les appels de données partent en même
+  // temps, et la redirection est décidée après eux (cf. verifierSession).
+  const session = verifierSession(cookie);
   let clients: Client[] = [];
   let erreur = false;
   try {
@@ -23,5 +21,7 @@ export default async function ClientsPage() {
     // l'API passait pour une base vide. On distingue les deux cas.
     erreur = true;
   }
+  if (!(await session)) redirect("/login");
+
   return <ClientsList initialClients={clients} erreur={erreur} />;
 }

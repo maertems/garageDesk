@@ -1,17 +1,14 @@
 import { cookies } from "next/headers";
 import { redirect, notFound } from "next/navigation";
-import { apiJson } from "@/lib/api";
+import { apiJson, verifierSession } from "@/lib/api";
 import ClientForm from "../ClientForm";
 import { PageHeader, PageBody } from "@/components/layout/PageHeader";
 
 export default async function ClientEditPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const c = await cookies();
-  try {
-    await apiJson("/api/v1/auth/me", c.toString());
-  } catch {
-    redirect("/login");
-  }
+  // Session lancée sans être attendue : la fiche part en même temps.
+  const session = verifierSession(c.toString());
   type Client = {
     id: number;
     firstName: string;
@@ -24,12 +21,15 @@ export default async function ClientEditPage({ params }: { params: Promise<{ id:
     vatNumber?: string;
     siren?: string;
   };
-  let client: Client | null = null;
-  try {
-    client = await apiJson<Client>(`/api/v1/clients/${id}`, c.toString());
-  } catch {
-    notFound();
-  }
+  const client = await apiJson<Client>(`/api/v1/clients/${id}`, c.toString()).catch(
+    () => null
+  );
+
+  // La session AVANT l'absence : le `catch` d'origine renvoyait aussi les 401 sur
+  // notFound(), donc une session expirée donnait une page « introuvable ».
+  if (!(await session)) redirect("/login");
+  if (!client) notFound();
+
   return (
     <>
       <PageHeader

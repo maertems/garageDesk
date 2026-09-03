@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { apiJson } from "@/lib/api";
+import { apiJson, verifierSession } from "@/lib/api";
 import {
   HOUR_HEIGHT_ALLOWED_PX,
   HOUR_HEIGHT_DEFAULT_PX,
@@ -11,15 +11,6 @@ import CalendarView, { type Appointment } from "./calendar/CalendarView";
 export default async function HomePage() {
   const cookieStore = await cookies();
   const cookie = cookieStore.toString();
-  let ok = false;
-  try {
-    await apiJson("/api/v1/auth/me", cookie);
-    ok = true;
-  } catch {
-    //
-  }
-  if (!ok) redirect("/login");
-
   const now = new Date();
   const month = now.getMonth() + 1;
   const year = now.getFullYear();
@@ -38,7 +29,11 @@ export default async function HomePage() {
   const finRdv = new Date(year, month, 0, 23, 59, 59, 999);
   finRdv.setDate(finRdv.getDate() + 7);
 
-  const [settings, categories, statuses, leaveRequests, loanReservations, appointments] = await Promise.all([
+  // La session est vérifiée DANS le même lot que les données, et non avant : elle
+  // était attendue seule, ce qui ajoutait un aller-retour complet à chaque
+  // affichage — la page la plus coûteuse du site, avec ses six appels.
+  const [session, settings, categories, statuses, leaveRequests, loanReservations, appointments] = await Promise.all([
+    verifierSession(cookie),
     apiJson<{ key: string; value: string }[]>("/api/v1/settings", cookie).catch(() => []),
     apiJson<{ id: number; code: string; color: string }[]>("/api/v1/appointmentCategories", cookie).catch(() => []),
     apiJson<{ id: number; code: string; color: string }[]>("/api/v1/appointmentStatuses", cookie).catch(() => []),
@@ -49,6 +44,8 @@ export default async function HomePage() {
       cookie
     ).catch(() => []),
   ]);
+
+  if (!session) redirect("/login");
 
   const settingsMap: Record<string, string> = {};
   if (Array.isArray(settings)) settings.forEach((s) => (settingsMap[s.key] = s.value));
@@ -79,6 +76,8 @@ export default async function HomePage() {
         slotMinutes={slotMinutes}
         hourHeightPx={hourHeightPx}
         initialAppointments={Array.isArray(appointments) ? appointments : []}
+        initialRangeStart={debutRdv.toISOString()}
+        initialRangeEnd={finRdv.toISOString()}
         categories={categories}
         statuses={statuses}
         leaveRequests={Array.isArray(leaveRequests) ? leaveRequests : []}

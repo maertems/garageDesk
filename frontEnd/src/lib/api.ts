@@ -35,6 +35,25 @@ export async function apiJson<T>(path: string, cookie?: string | null): Promise<
   return res.json() as Promise<T>;
 }
 
+/**
+ * Vérifie la session, sans jamais lever.
+ *
+ * À lancer **sans l'attendre**, en même temps que les appels de données, et à
+ * n'attendre qu'après eux. Les pages faisaient l'inverse — `await` sur
+ * `/api/v1/auth/me` avant de lancer quoi que ce soit d'autre — ce qui ajoutait un
+ * aller-retour complet, sérialisé, à chaque affichage. Rien n'y obligeait : toutes
+ * les routes de l'API revalident la session de leur côté, cet appel ne sert qu'à
+ * décider de la redirection vers `/login`.
+ */
+export async function verifierSession(cookie?: string | null): Promise<boolean> {
+  try {
+    await apiJson("/api/v1/auth/me", cookie);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function apiPost(
   path: string,
   body: unknown,

@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect, notFound } from "next/navigation";
-import { apiJson } from "@/lib/api";
+import { apiJson, verifierSession } from "@/lib/api";
 import LoanVehicleForm from "../LoanVehicleForm";
 import { PageHeader, PageBody } from "@/components/layout/PageHeader";
 
@@ -17,11 +17,9 @@ export default async function LoanVehicleEditPage({ params }: { params: Promise<
   const { id } = await params;
   const cookieStore = await cookies();
   const cookie = cookieStore.toString();
-  try {
-    await apiJson("/api/v1/auth/me", cookie);
-  } catch {
-    redirect("/login");
-  }
+  // Session lancée sans être attendue : les appels de données partent en même
+  // temps, et la redirection est décidée après eux (cf. verifierSession).
+  const session = verifierSession(cookie);
   let vehicle: LoanVehicle | null = null;
   try {
     vehicle = await apiJson<LoanVehicle>(`/api/v1/loanVehicles/${id}`, cookie);
@@ -29,6 +27,8 @@ export default async function LoanVehicleEditPage({ params }: { params: Promise<
     notFound();
   }
   const title = [vehicle?.brand, vehicle?.model].filter(Boolean).join(" ") || vehicle?.uniqueNumber;
+  if (!(await session)) redirect("/login");
+
   return (
     <>
       <PageHeader

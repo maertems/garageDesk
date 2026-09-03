@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { apiJson } from "@/lib/api";
+import { apiJson, verifierSession } from "@/lib/api";
 import { PageLoading } from "@/components/ui/page-loading";
 import LoanVehiclesSection, {
   type LoanReservation,
@@ -19,11 +19,9 @@ import LoanVehiclesSection, {
 export default async function LoanVehiclesPage() {
   const cookieStore = await cookies();
   const cookie = cookieStore.toString();
-  try {
-    await apiJson("/api/v1/auth/me", cookie);
-  } catch {
-    redirect("/login");
-  }
+  // Session lancée sans être attendue : les appels de données partent en même
+  // temps, et la redirection est décidée après eux (cf. verifierSession).
+  const session = verifierSession(cookie);
 
   let erreur = false;
   const [vehicles, reservations] = await Promise.all([
@@ -36,6 +34,8 @@ export default async function LoanVehiclesPage() {
       return [] as LoanReservation[];
     }),
   ]);
+
+  if (!(await session)) redirect("/login");
 
   return (
     <Suspense fallback={<PageLoading className="min-h-[60vh]" />}>

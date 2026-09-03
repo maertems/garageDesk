@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect, notFound } from "next/navigation";
-import { apiJson } from "@/lib/api";
+import { apiJson, verifierSession } from "@/lib/api";
 import EmployeeForm from "../EmployeeForm";
 import { PageHeader, PageBody } from "@/components/layout/PageHeader";
 
@@ -8,11 +8,9 @@ export default async function EmployeeEditPage(props: { params: Promise<{ id: st
   const { id } = await props.params;
   const cookieStore = await cookies();
   const cookie = cookieStore.toString();
-  try {
-    await apiJson("/api/v1/auth/me", cookie);
-  } catch {
-    redirect("/login");
-  }
+  // Session lancée sans être attendue : les appels de données partent en même
+  // temps, et la redirection est décidée après eux (cf. verifierSession).
+  const session = verifierSession(cookie);
   type Employee = { id: number; firstName: string; lastName: string; category: string };
   let employee: Employee | null = null;
   try {
@@ -20,6 +18,8 @@ export default async function EmployeeEditPage(props: { params: Promise<{ id: st
   } catch {
     notFound();
   }
+  if (!(await session)) redirect("/login");
+
   return (
     <>
       <PageHeader

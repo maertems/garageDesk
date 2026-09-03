@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect, notFound } from "next/navigation";
-import { apiJson } from "@/lib/api";
+import { apiJson, verifierSession } from "@/lib/api";
 import VehicleForm from "../VehicleForm";
 import { PageHeader, PageBody } from "@/components/layout/PageHeader";
 
@@ -9,11 +9,9 @@ export default async function VehicleEditPage(props: { params: Promise<{ id: str
   const id = params.id;
   const cookieStore = await cookies();
   const cookie = cookieStore.toString();
-  try {
-    await apiJson("/api/v1/auth/me", cookie);
-  } catch {
-    redirect("/login");
-  }
+  // Session lancée sans être attendue : les appels de données partent en même
+  // temps, et la redirection est décidée après eux (cf. verifierSession).
+  const session = verifierSession(cookie);
   type Vehicle = {
     id: number;
     clientId: number;
@@ -30,6 +28,8 @@ export default async function VehicleEditPage(props: { params: Promise<{ id: str
     notFound();
   }
   const title = [vehicle?.brand, vehicle?.model].filter(Boolean).join(" ");
+  if (!(await session)) redirect("/login");
+
   return (
     <>
       <PageHeader

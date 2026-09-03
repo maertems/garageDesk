@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { apiJson } from "@/lib/api";
+import { apiJson, verifierSession } from "@/lib/api";
 import LeaveRequestsList from "./LeaveRequestsList";
 
 type LeaveRequest = {
@@ -18,11 +18,9 @@ type Employee = { id: number; firstName: string; lastName: string };
 export default async function LeavePage() {
   const cookieStore = await cookies();
   const cookie = cookieStore.toString();
-  try {
-    await apiJson("/api/v1/auth/me", cookie);
-  } catch {
-    redirect("/login");
-  }
+  // Session lancée sans être attendue : les appels de données partent en même
+  // temps, et la redirection est décidée après eux (cf. verifierSession).
+  const session = verifierSession(cookie);
   // Les salariés sont rendus ici, et non plus cherchés par le navigateur : le
   // formulaire de congé s'ouvrait sur une liste de salariés vide le temps de
   // l'appel.
@@ -30,6 +28,8 @@ export default async function LeavePage() {
     apiJson<LeaveRequest[]>("/api/v1/leaveRequests", cookie).catch(() => [] as LeaveRequest[]),
     apiJson<Employee[]>("/api/v1/employees", cookie).catch(() => [] as Employee[]),
   ]);
+
+  if (!(await session)) redirect("/login");
 
   return (
     <LeaveRequestsList

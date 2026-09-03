@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { apiJson } from "@/lib/api";
+import { apiJson, verifierSession } from "@/lib/api";
 import VehiclesList, { type Vehicle } from "./VehiclesList";
 
 /**
@@ -12,11 +12,9 @@ import VehiclesList, { type Vehicle } from "./VehiclesList";
 export default async function VehiclesPage() {
   const cookieStore = await cookies();
   const cookie = cookieStore.toString();
-  try {
-    await apiJson("/api/v1/auth/me", cookie);
-  } catch {
-    redirect("/login");
-  }
+  // Session lancée sans être attendue : les appels de données partent en même
+  // temps, et la redirection est décidée après eux (cf. verifierSession).
+  const session = verifierSession(cookie);
 
   let vehicles: Vehicle[] = [];
   let erreur = false;
@@ -28,6 +26,8 @@ export default async function VehiclesPage() {
     // « Aucun véhicule ».
     erreur = true;
   }
+
+  if (!(await session)) redirect("/login");
 
   return <VehiclesList initialVehicles={vehicles} erreur={erreur} />;
 }
