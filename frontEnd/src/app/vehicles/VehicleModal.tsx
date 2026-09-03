@@ -64,9 +64,15 @@ function InfoRow({ label, value }: { label: string; value?: string | null | numb
 type Props = {
   vehicleId: number | null;
   onClose: () => void;
+  /**
+   * Masque le bouton « Modifier ». Il navigue vers la fiche, ce qui, depuis un
+   * formulaire de rendez-vous en cours de saisie, la ferait perdre sans
+   * avertissement. Les listes, elles, gardent le bouton : rien n'y est en cours.
+   */
+  hideEdit?: boolean;
 };
 
-export default function VehicleModal({ vehicleId, onClose }: Props) {
+export default function VehicleModal({ vehicleId, onClose, hideEdit = false }: Props) {
   const router = useRouter();
   const [vehicle, setVehicle] = useState<VehicleDetail | null>(null);
   const [details, setDetails] = useState<VehicleExtra[]>([]);
@@ -114,7 +120,7 @@ export default function VehicleModal({ vehicleId, onClose }: Props) {
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b pr-12 gap-4">
             <DialogTitle className="truncate">{loading ? "Chargement…" : title}</DialogTitle>
-            {!loading && vehicle && (
+            {!loading && vehicle && !hideEdit && (
               <div className="flex items-center gap-2 shrink-0">
                 <Button
                   variant="outline"
@@ -199,6 +205,7 @@ export default function VehicleModal({ vehicleId, onClose }: Props) {
       <ClientModal
         clientId={clientModalId}
         onClose={() => setClientModalId(null)}
+        hideEdit={hideEdit}
       />
     </>
   );

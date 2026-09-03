@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { format, addMinutes, parseISO, differenceInMinutes } from "date-fns";
-import { AlertTriangle, FileText, Loader2, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, FileText, Info, Loader2, Plus, Trash2 } from "lucide-react";
 import { getLabel, appointmentCategoryLabels, appointmentStatusLabels } from "@/lib/labels";
 import {
   Dialog,
@@ -26,6 +26,8 @@ import { cn } from "@/lib/utils";
 import ClientForm from "@/app/clients/ClientForm";
 import ClientPicker from "@/components/clients/ClientPicker";
 import VehicleFormModal from "@/app/vehicles/VehicleFormModal";
+import ClientModal from "@/app/clients/ClientModal";
+import VehicleModal from "@/app/vehicles/VehicleModal";
 
 type Client = {
   id: number;
@@ -130,6 +132,9 @@ export default function AppointmentForm({
   const [notificationWarnings, setNotificationWarnings] = useState<string[] | null>(null);
   const [showClientModal, setShowClientModal] = useState(false);
   const [showVehicleModal, setShowVehicleModal] = useState(false);
+  // Fiches consultées depuis les boutons « i ». Nulles = fermées.
+  const [infoClientId, setInfoClientId] = useState<number | null>(null);
+  const [infoVehicleId, setInfoVehicleId] = useState<number | null>(null);
 
   const endDateTime = useMemo(() => {
     if (!startDate || !startTime) return null;
@@ -531,6 +536,17 @@ export default function AppointmentForm({
                     >
                       <Plus className="h-4 w-4" />
                     </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      disabled={!selectedClient}
+                      onClick={() => setInfoClientId(Number(clientId))}
+                      title="Voir la fiche du client"
+                      aria-label="Voir la fiche du client"
+                    >
+                      <Info className="h-4 w-4" />
+                    </Button>
                   </div>
 
                   <div className="flex items-center gap-3 min-w-0">
@@ -561,6 +577,18 @@ export default function AppointmentForm({
                       aria-label="Ajouter un véhicule"
                     >
                       <Plus className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="shrink-0"
+                      disabled={!vehicleId}
+                      onClick={() => setInfoVehicleId(Number(vehicleId))}
+                      title="Voir la fiche du véhicule"
+                      aria-label="Voir la fiche du véhicule"
+                    >
+                      <Info className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
@@ -924,6 +952,11 @@ export default function AppointmentForm({
         onSaved={handleVehicleCreated}
         defaultClientId={typeof clientId === "number" ? clientId : undefined}
       />
+
+      {/* Consultation seule : `hideEdit` retire le bouton « Modifier », qui
+          navigue vers la fiche et ferait perdre le rendez-vous en cours. */}
+      <ClientModal clientId={infoClientId} onClose={() => setInfoClientId(null)} hideEdit />
+      <VehicleModal vehicleId={infoVehicleId} onClose={() => setInfoVehicleId(null)} hideEdit />
     </>
   );
 }
