@@ -25,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import ClientForm from "@/app/clients/ClientForm";
 import ClientPicker from "@/components/clients/ClientPicker";
+import VehicleFormModal from "@/app/vehicles/VehicleFormModal";
 
 type Client = {
   id: number;
@@ -128,6 +129,7 @@ export default function AppointmentForm({
   // branché — le dialogue était du code mort. Il sert maintenant à l'après.
   const [notificationWarnings, setNotificationWarnings] = useState<string[] | null>(null);
   const [showClientModal, setShowClientModal] = useState(false);
+  const [showVehicleModal, setShowVehicleModal] = useState(false);
 
   const endDateTime = useMemo(() => {
     if (!startDate || !startTime) return null;
@@ -265,6 +267,27 @@ export default function AppointmentForm({
         setClientId(id);
       })
       .catch(() => {});
+  }
+
+  function handleVehicleCreated(record: Record<string, unknown>) {
+    setShowVehicleModal(false);
+    const id = typeof record?.id === "number" ? record.id : null;
+    if (id == null) return;
+    const nouveau = {
+      id,
+      licensePlate: (record.licensePlate as string) ?? "",
+      brand: record.brand as string | undefined,
+      model: record.model as string | undefined,
+    };
+    // On l'insère dans la fiche du client plutôt que de recharger toute la liste :
+    // le choix ci-contre est alimenté par `clients`, et un aller-retour de plus
+    // n'apporterait rien. Même façon de faire que sur le nouveau document.
+    setClients((prev) =>
+      prev.map((c) =>
+        c.id === clientId ? { ...c, vehicles: [...(c.vehicles ?? []), nouveau] } : c
+      )
+    );
+    setVehicleId(id);
   }
 
   async function doSubmit() {
@@ -527,6 +550,18 @@ export default function AppointmentForm({
                         </option>
                       ))}
                     </select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="shrink-0"
+                      disabled={!selectedClient}
+                      onClick={() => setShowVehicleModal(true)}
+                      title="Ajouter un véhicule"
+                      aria-label="Ajouter un véhicule"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
               </section>
@@ -880,6 +915,15 @@ export default function AppointmentForm({
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Un véhicule appartient à un client : le bouton reste inerte tant qu'aucun
+          n'est choisi, et le propriétaire est prérempli. */}
+      <VehicleFormModal
+        open={showVehicleModal}
+        onClose={() => setShowVehicleModal(false)}
+        onSaved={handleVehicleCreated}
+        defaultClientId={typeof clientId === "number" ? clientId : undefined}
+      />
     </>
   );
 }
