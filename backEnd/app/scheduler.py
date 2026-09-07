@@ -59,8 +59,33 @@ def _reminder_job() -> None:
         if current_time == reminder_time and _last_reminder_run_date != today:
             send_reminders()
             _last_reminder_run_date = today
-    except Exception:
-        pass
+    except Exception as exc:
+        # `except Exception: pass` jusqu'ici, et c'était le silence le plus coûteux
+        # du projet : l'envoi ne se déclenche que dans la fenêtre d'UNE MINUTE où
+        # `current_time == reminder_time`, donc une exception — base injoignable,
+        # réglage illisible — fait sauter les rappels de la JOURNÉE ENTIÈRE. Sans
+        # trace, personne ne l'apprend, et les clients ne sont pas prévenus.
+        #
+        # `_last_reminder_run_date` reste volontairement non positionné : si le
+        # réveil suivant retombe dans la même minute, une seconde tentative a lieu.
+        log.exception("Rappels : échec de la tâche planifiée")
+        try:
+            from app.services.log_service import log_notification
+
+            log_notification(
+                triggered_by="scheduler",
+                client_id=None,
+                recipient=None,
+                notification_type="reminder",
+                endpoint_type=None,
+                success=False,
+                error_message=f"tâche planifiée en échec : {exc}",
+            )
+        except Exception:
+            # La trace en base est un mieux, pas une obligation : si elle échoue
+            # aussi — c'est le cas quand la panne EST la base — le journal du
+            # conteneur porte déjà la pile complète.
+            pass
 
 
 def _scheduler_loop() -> None:

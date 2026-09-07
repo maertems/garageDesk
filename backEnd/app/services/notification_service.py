@@ -287,7 +287,7 @@ def get_appointments_for_reminder() -> list[dict]:
     with db_cursor() as cur:
         cur.execute(
             """
-            SELECT a.id, a.startTime, a.appointmentType,
+            SELECT a.id, a.startTime, a.appointmentType, a.clientId,
                    c.firstName, c.lastName, c.email, c.phone,
                    v.brand, v.model
             FROM appointments a
@@ -310,6 +310,20 @@ def send_reminders(triggered_by: str = "scheduler") -> int:
     """
     endpoints = get_endpoints()
     if not endpoints:
+        # Sortie muette jusqu'ici, alors que c'est le motif le plus fréquent : aucun
+        # rappel ne part et rien ne le dit. La création le signalait déjà (§ 78), le
+        # rappel non — et lui n'a aucune interface pour avertir, personne n'étant
+        # devant l'écran à 19 h. La trace en base est donc le SEUL recours.
+        logger.warning("Rappels : aucun canal d'envoi configuré (Admin > Notifications)")
+        log_notification(
+            triggered_by=triggered_by,
+            client_id=None,
+            recipient=None,
+            notification_type="reminder",
+            endpoint_type=None,
+            success=False,
+            error_message="aucun canal de notification configuré",
+        )
         return 0
     settings = get_notification_settings()
     template = settings["notificationMessageReminder"] or DEFAULT_MESSAGE_REMINDER
@@ -326,7 +340,10 @@ def send_reminders(triggered_by: str = "scheduler") -> int:
         message = _replace_keywords(template, context)
         email_val = (apt.get("email") or apt.get("Email") or "").strip()
         phone_val = (apt.get("phone") or apt.get("Phone") or "").strip()
-        client_id = apt.get("clientId") or apt.get("id")
+        # `clientId` vient du SELECT ; il était calculé ici puis JAMAIS utilisé —
+        # les appels passaient `apt.get("clientId")` sur un champ que la requête ne
+        # récupérait pas, si bien que toute trace de rappel portait clientId=null.
+        client_id = apt.get("clientId")
         sent_any = False
         for ep in endpoints:
             ep_type = ep["type"]
@@ -336,16 +353,35 @@ def send_reminders(triggered_by: str = "scheduler") -> int:
             else:
                 destinataire = phone_val
             if not destinataire:
+                # Consigné, comme à la création : un canal sauté faute de
+                # coordonnées est la cause la plus fréquente d'un rappel qui « ne
+                # marche pas », et il ne laissait aucune trace.
+                manque = "email" if ep_type == "email" else "téléphone"
+                logger.warning(
+                    "Rappel RDV %s : canal %s ignoré (client sans %s)",
+                    apt.get("id"), ep_type, manque
+                )
+                log_notification(
+                    triggered_by=triggered_by,
+                    client_id=client_id,
+                    recipient=None,
+                    notification_type="reminder",
+                    endpoint_type=ep_type,
+                    success=False,
+                    error_message=f"client sans {manque}",
+                    appointment_id=apt.get("id"),
+                )
                 continue
             success, error = _send_to_endpoint(base_url, destinataire, message)
             log_notification(
                 triggered_by=triggered_by,
-                client_id=apt.get("clientId"),
+                client_id=client_id,
                 recipient=destinataire,
                 notification_type="reminder",
                 endpoint_type=ep_type,
                 success=success,
                 error_message=error,
+                appointment_id=apt.get("id"),
             )
             if success:
                 sent_any = True
