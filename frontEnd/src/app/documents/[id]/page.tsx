@@ -25,7 +25,9 @@ type BillDetail = {
   type: string | null;
   description: string | null;
   reference: string | null;
-  time: number | null;
+  // Texte depuis la migration 029 : heures, quantité, ou unité de mesure
+  // en clair (« au metre »). L'API le rend tel quel.
+  time: string | number | null;
   timeEquivalentT1: number | null;
   priceHT: number | null;
   price: number | null;

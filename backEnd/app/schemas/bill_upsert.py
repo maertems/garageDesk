@@ -1,35 +1,10 @@
-from typing import Annotated, Optional, Any
+from typing import Any, Optional
 from datetime import date
-from pydantic import BeforeValidator
-from app.schemas.common import CamelModel
 
-
-def _to_str_or_none(v: Any) -> Optional[str]:
-    """Accepte int/float/str; renvoie str ou None. Couvre les cas où le Perl
-    encode un champ texte comme nombre (vin tout numérique, taxeType:2, etc.)."""
-    if v is None or v == "":
-        return None
-    return str(v)
-
-
-# Type à utiliser pour tout champ qui doit être str mais peut arriver en nombre.
-LooseStr = Annotated[Optional[str], BeforeValidator(_to_str_or_none)]
-
-
-def _to_float_or_none(v: Any) -> Optional[float]:
-    """Accepte un nombre ou une chaîne (y compris vide) ; renvoie float ou None.
-    Couvre les cas où le Perl envoie une chaîne vide au lieu d'omettre le champ."""
-    if v is None or v == "":
-        return None
-    return float(v)
-
-
-# Type à utiliser pour tout champ numérique qui peut arriver vide ("").
-LooseFloat = Annotated[Optional[float], BeforeValidator(_to_float_or_none)]
-
+from app.schemas.common import CamelModel, LooseFloat, LooseInt, LooseStr
 
 class UpsertCustomerInput(CamelModel):
-    vm_id: Optional[int] = None
+    vm_id: LooseInt = None
     first_name: LooseStr = None
     last_name: LooseStr = None
     postal_code: Optional[Any] = None  # int ou str selon la source
@@ -44,7 +19,7 @@ class UpsertCustomerInput(CamelModel):
 
 
 class UpsertCarInput(CamelModel):
-    vm_id: Optional[int] = None
+    vm_id: LooseInt = None
     license_plate: LooseStr = None
     brand: LooseStr = None
     model: LooseStr = None
@@ -72,13 +47,21 @@ class UpsertHeaderInput(CamelModel):
 
 class UpsertDetailInput(CamelModel):
     type: LooseStr = None
-    price_ht: Optional[float] = None
+    price_ht: LooseFloat = None
     reference: LooseStr = None
-    time: Optional[float] = None
+    # Champ POLYMORPHE dans la source : un nombre d'heures, une quantité de
+    # pièces, ou une unité de mesure en clair (« au metre »). Il est donc reçu et
+    # stocké comme du TEXTE — la colonne est passée de FLOAT(5,2) à VARCHAR par la
+    # migration 029. Un `Optional[float]` refusait « au metre » ET la chaîne vide,
+    # ce qui rejetait la facture entière en 422.
+    #
+    # Ce qui reste numérique : `timeEquivalentT1`, calculé seulement quand cette
+    # valeur se lit comme un nombre.
+    time: LooseStr = None
     description: LooseStr = None
-    price: Optional[float] = None
+    price: LooseFloat = None
     unit_price: LooseStr = None  # billing unit ("heure", "pièce", vide) — not a price
-    cash_back: Optional[float] = None
+    cash_back: LooseFloat = None
     taxe: LooseFloat = None
     taxe_type: LooseStr = None
 

@@ -141,19 +141,49 @@ def _get_t_prices(cur) -> tuple[float, float, float]:
     return prices.get("priceT1", 75.0), prices.get("priceT2", 89.0), prices.get("priceT3", 98.0)
 
 
+def _time_numerique(valeur) -> Optional[float]:
+    """Lit `time` comme un nombre, ou rend None s'il porte du texte.
+
+    Le champ est polymorphe : nombre d'heures, quantité de pièces, ou unité de
+    mesure en clair (« au metre »). Tout ce qui s'appuie sur lui pour calculer
+    doit donc passer par ici, et accepter de ne rien obtenir.
+    """
+    if valeur is None or valeur == "":
+        return None
+    try:
+        return float(valeur)
+    except (TypeError, ValueError):
+        return None
+
+
 def _time_equivalent_t1(det: UpsertDetailInput, price_t1: float) -> Optional[float]:
     if det.type != "MI":
         return None
-    if det.time is None or det.price_ht is None or price_t1 == 0:
+    heures = _time_numerique(det.time)
+    if heures is None or det.price_ht is None or price_t1 == 0:
         return None
-    return round(det.time * det.price_ht / price_t1, 4)
+    return round(heures * det.price_ht / price_t1, 4)
 
 
 def _detail_key(ref, desc, time) -> tuple:
+    """Clé de rapprochement d'une ligne de détail.
+
+    La composante `time` est NUMÉRIQUE quand la valeur se lit comme un nombre, et
+    textuelle sinon. C'est le point à ne pas rater lors du passage de la colonne
+    de FLOAT(5,2) à VARCHAR : les 30 000 lignes déjà en base y sont relues comme
+    « 1.50 » là où la source pousse `1.5`. Une comparaison purement textuelle
+    aurait vu toutes ces lignes comme nouvelles et les aurait DUPLIQUÉES à la
+    première synchro.
+    """
+    nombre = _time_numerique(time)
+    if nombre is not None:
+        composante = round(nombre, 4)
+    else:
+        composante = (str(time).strip() or None) if time is not None else None
     return (
         (ref or "").strip(),
         (desc or "").strip(),
-        round(float(time), 4) if time is not None else None,
+        composante,
     )
 
 
@@ -527,6 +557,25 @@ def upsert_bill(payload: UpsertBillPayload, current_user: dict = Depends(get_cur
         raise
 
 
+def _voiture_exploitable(car) -> bool:
+    """La charge porte-t-elle vraiment un véhicule ?
+
+    `if car:` ne suffisait pas : un modèle Pydantic est TOUJOURS vrai, même tous
+    champs nuls. Or la source contient des documents sans voiture, et le script
+    pousse alors `car` avec des champs vides plutôt que d'omettre la clé. Sans ce
+    contrôle, `_resolve_vehicle` s'exécutait et, faute d'immatriculation, CRÉAIT un
+    véhicule vide rattaché à la facture.
+
+    Un seul des trois champs identifiants suffit à rendre la fiche exploitable :
+    l'ancrage `vmId`, l'immatriculation, ou le VIN. La marque seule ne distingue
+    rien et ne compte donc pas — « Renault » sans plaque ne se rapproche d'aucune
+    fiche et ne mérite pas une création.
+    """
+    if car is None:
+        return False
+    return bool(car.vm_id or (car.license_plate or "").strip() or (car.vin or "").strip())
+
+
 def _upsert_bill(payload: UpsertBillPayload, current_user: dict) -> UpsertBillResponse:
     # T-price multipliers for timeEquivalentT1
     with db_cursor() as cur:
@@ -542,7 +591,7 @@ def _upsert_bill(payload: UpsertBillPayload, current_user: dict) -> UpsertBillRe
     vehicle_id: Optional[int] = None
     vehicle_action = "skipped"
     car = payload.header.car
-    if car:
+    if _voiture_exploitable(car):
         with db_cursor(commit=True) as cur:
             vehicle_id, vehicle_action = _resolve_vehicle(cur, client_id, car)
 

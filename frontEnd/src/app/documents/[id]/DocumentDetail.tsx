@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { User, Car } from "lucide-react";
 import { PageHeader, PageBody } from "@/components/layout/PageHeader";
+import { cn } from "@/lib/utils";
 import {
   Table,
   TableBody,
@@ -36,7 +37,9 @@ type BillDetail = {
   type: string | null;
   description: string | null;
   reference: string | null;
-  time: number | null;
+  // Texte depuis la migration 029 : heures, quantité, ou unité de mesure
+  // en clair (« au metre »). L'API le rend tel quel.
+  time: string | number | null;
   timeEquivalentT1: number | null;
   priceHT: number | null;
   price: number | null;
@@ -252,7 +255,23 @@ export default function DocumentDetail({ bill, billDetails, client, vehicle }: P
                         <TableRow key={d.id} className={idx % 2 === 1 ? "bg-primary/10 hover:bg-primary/15" : "hover:bg-accent/40"}>
                           <TableCell className="text-sm text-muted-foreground font-mono">{d.reference ?? <span className="opacity-40">—</span>}</TableCell>
                           <TableCell className="text-sm">{d.description ?? <span className="opacity-40">—</span>}</TableCell>
-                          <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{d.time != null ? d.time : <span className="opacity-40">—</span>}</TableCell>
+                          {/* `time` peut porter un nombre ou une unité de mesure en
+                              clair (« au metre ») : les chiffres restent alignés à
+                              droite en chasse fixe, le texte se lit à gauche. */}
+                          <TableCell
+                            className={cn(
+                              "text-sm text-muted-foreground",
+                              d.time != null && Number.isFinite(Number(d.time))
+                                ? "text-right tabular-nums"
+                                : "text-left"
+                            )}
+                          >
+                            {d.time != null && String(d.time).trim() !== "" ? (
+                              d.time
+                            ) : (
+                              <span className="opacity-40">—</span>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{d.timeEquivalentT1 != null ? d.timeEquivalentT1 : <span className="opacity-40">—</span>}</TableCell>
                           <TableCell className="text-sm text-muted-foreground">{d.unitPrice || <span className="opacity-40">—</span>}</TableCell>
                           <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{d.priceHT != null ? fmt(d.priceHT, " €") : <span className="opacity-40">—</span>}</TableCell>
