@@ -57,8 +57,14 @@ export type Appointment = {
   endTime: string;
   prestation?: string | null;
   appointmentType?: string;
-  comment?: string;
+  appointmentSubType?: string | null;
+  comment?: string | null;
   smsReminder: boolean;
+  // Prêt lié, tel que la liste le rend : le formulaire de modification s'en
+  // sert pour s'afficher garni sans attendre son propre appel.
+  loanVehicleId?: number | null;
+  loanStartDate?: string | null;
+  loanEndDate?: string | null;
   clientFirstName?: string;
   clientLastName?: string;
   vehicleLicensePlate?: string;
@@ -84,9 +90,19 @@ type LeaveRequest = {
   employeeLastName?: string;
 };
 
+type LoanVehicle = {
+  id: number;
+  uniqueNumber: string;
+  licensePlate: string;
+  brand?: string;
+  model?: string;
+  active?: boolean;
+};
+
 type LoanReservation = {
   id: number;
   loanVehicleId: number;
+  appointmentId?: number | null;
   startDate: string;
   endDate: string | null;
   loanVehicleUniqueNumber?: string;
@@ -123,7 +139,13 @@ type CalendarViewProps = {
   categories: { id: number; code: string; color: string }[];
   statuses: { id: number; code: string; color: string }[];
   leaveRequests?: LeaveRequest[];
+  // Toutes les réservations, sans borne de date : le filtrage se fait ici jour
+  // par jour, et le formulaire de RDV en a besoin pour griser les véhicules de
+  // prêt déjà sortis. Il les redemandait lui-même à chaque ouverture.
   loanReservations?: LoanReservation[];
+  // Parc de prêt, rendu par le serveur et transmis au formulaire : lui aussi
+  // était redemandé à chaque ouverture du modal.
+  loanVehicles?: LoanVehicle[];
 };
 
 function parseTime(t: string): number {
@@ -347,6 +369,7 @@ export default function CalendarView({
   statuses,
   leaveRequests = [],
   loanReservations = [],
+  loanVehicles = [],
 }: CalendarViewProps) {
   const [view, setView] = useState(initialView);
   const [baseDate, setBaseDate] = useState(new Date());
@@ -365,6 +388,9 @@ export default function CalendarView({
   const [loans, setLoans] = useState<LoanReservation[]>(loanReservations);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  // Le rendez-vous cliqué, tel qu'il est déjà en mémoire : le formulaire s'en
+  // garnit immédiatement au lieu d'attendre son appel réseau.
+  const [editingApt, setEditingApt] = useState<Appointment | null>(null);
   const [slotStart, setSlotStart] = useState<Date | null>(null);
   const [slotEnd, setSlotEnd] = useState<Date | null>(null);
   const [reservationFormOpen, setReservationFormOpen] = useState(false);
@@ -468,12 +494,14 @@ export default function CalendarView({
     setSlotStart(start);
     setSlotEnd(end);
     setEditingId(null);
+    setEditingApt(null);
     setFormOpen(true);
   };
 
   const handleEventClick = (e: React.MouseEvent, apt: Appointment) => {
     e.stopPropagation();
     setEditingId(apt.id);
+    setEditingApt(apt);
     setSlotStart(parseISO(apt.startTime));
     setSlotEnd(parseISO(apt.endTime));
     setFormOpen(true);
@@ -482,6 +510,7 @@ export default function CalendarView({
   const handleFormClose = () => {
     setFormOpen(false);
     setEditingId(null);
+    setEditingApt(null);
     fetchAppointments();
     // Un RDV peut créer, modifier ou supprimer sa réservation de prêt liée : sans
     // ce rechargement, la pastille n'apparaissait qu'après un F5.
@@ -651,6 +680,7 @@ export default function CalendarView({
                 setSlotStart(new Date());
                 setSlotEnd(null);
                 setEditingId(null);
+                setEditingApt(null);
                 setFormOpen(true);
               }}
             >
@@ -986,10 +1016,13 @@ export default function CalendarView({
         {formOpen && (
           <AppointmentForm
             editingId={editingId}
+            initialAppointment={editingApt}
             initialStart={slotStart || undefined}
             initialEnd={slotEnd || undefined}
             categories={categories}
             statuses={statuses}
+            loanVehicles={loanVehicles}
+            loanReservations={loans}
             defaultDurationMins={defaultDurationMins}
             onClose={handleFormClose}
             onSaved={handleFormClose}

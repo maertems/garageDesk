@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import settings as app_settings
@@ -97,7 +98,9 @@ async def audit_log_middleware(request: Request, call_next):
             request.headers.get(app_settings.sessionHeaderName)
             or request.cookies.get(app_settings.sessionCookieName)
         )
-        user = get_user_by_session(session_id) if session_id else None
+        # Dans un thread : ce middleware est asynchrone et la recherche de session
+        # peut aller en base (cache manquant). Idem pour l'écriture du journal.
+        user = await run_in_threadpool(get_user_by_session, session_id) if session_id else None
 
         params = None
         if body_bytes:
@@ -109,7 +112,8 @@ async def audit_log_middleware(request: Request, call_next):
             params = params or {}
             params["_query"] = dict(request.query_params)
 
-        log_action(
+        await run_in_threadpool(
+            log_action,
             ip=ip,
             user=user,
             action=f"{request.method} {request.url.path}",

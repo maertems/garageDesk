@@ -50,27 +50,52 @@ def list_clients(
         rows = cur.fetchall()
     if not with_vehicles:
         return [ClientResponse(**r) for r in rows]
+    by_client = _vehicles_by_client([r["id"] for r in rows])
+    return [ClientWithVehiclesResponse(**r, vehicles=by_client.get(r["id"], [])) for r in rows]
+
+
+# Au-delà de ce nombre de clients, les véhicules sont lus en une passe sur toute la
+# table plutôt que par une liste `IN (...)` de milliers d'identifiants.
+_VEHICLES_IN_LIST_MAX = 500
+
+
+def _vehicles_by_client(client_ids: list[int]) -> dict[int, list[VehicleResponse]]:
+    """Véhicules des clients donnés, groupés par client.
+
+    La table `vehicles` était lue EN ENTIER à chaque `withVehicles=true`, même pour
+    une recherche qui ne rendait que trois clients : 1 515 lignes et 320 Ko, à
+    chaque frappe dans le sélecteur de client. Pour une liste courte, on ne lit que
+    les véhicules de ces clients-là.
+    """
+    if not client_ids:
+        return {}
+    cols = "id, clientId, brand, model, licensePlate, vin, mileage, vmId, type, registrationDate"
     with db_cursor() as cur:
-        cur.execute(
-            "SELECT id, clientId, brand, model, licensePlate, vin, mileage, vmId, type, registrationDate FROM vehicles ORDER BY clientId, licensePlate"
-        )
+        if len(client_ids) <= _VEHICLES_IN_LIST_MAX:
+            placeholders = ", ".join(["%s"] * len(client_ids))
+            cur.execute(
+                f"SELECT {cols} FROM vehicles WHERE clientId IN ({placeholders}) ORDER BY clientId, licensePlate",
+                client_ids,
+            )
+        else:
+            cur.execute(f"SELECT {cols} FROM vehicles ORDER BY clientId, licensePlate")
         vehicles = cur.fetchall()
-    by_client = {}
+    by_client: dict[int, list[VehicleResponse]] = {}
     for v in vehicles:
-        cid = v["clientId"]
-        if cid not in by_client:
-            by_client[cid] = []
-        by_client[cid].append(VehicleResponse(**v))
-    result = []
-    for r in rows:
-        result.append(
-            ClientWithVehiclesResponse(**r, vehicles=by_client.get(r["id"], []))
-        )
-    return result
+        by_client.setdefault(v["clientId"], []).append(VehicleResponse(**v))
+    return by_client
 
 
-@router.get("/{client_id}", response_model=ClientResponse)
-def get_client(client_id: int, current_user: dict = Depends(get_current_user)):
+@router.get(
+    "/{client_id}",
+    response_model=ClientResponse | ClientWithVehiclesResponse,
+    description="Get one client. Use withVehicles=true to include its vehicles.",
+)
+def get_client(
+    client_id: int,
+    current_user: dict = Depends(get_current_user),
+    with_vehicles: bool = Query(False, alias="withVehicles"),
+):
     with db_cursor() as cur:
         cur.execute(
             f"SELECT {_COLUMNS} FROM clients WHERE id = %s",
@@ -79,7 +104,12 @@ def get_client(client_id: int, current_user: dict = Depends(get_current_user)):
         row = cur.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail={"code": "notFound", "message": "Client not found"})
-    return ClientResponse(**row)
+    if not with_vehicles:
+        return ClientResponse(**row)
+    # Le formulaire de rendez-vous, en modification, n'a besoin que de CE client et
+    # de ses véhicules — il téléchargeait la base entière pour les trouver.
+    by_client = _vehicles_by_client([client_id])
+    return ClientWithVehiclesResponse(**row, vehicles=by_client.get(client_id, []))
 
 
 @router.post("", response_model=ClientResponse, status_code=201)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { format, addMinutes, parseISO, differenceInMinutes } from "date-fns";
 import { AlertTriangle, FileText, Info, Loader2, Plus, Trash2 } from "lucide-react";
 import { libelleReferentiel, appointmentCategoryLabels, appointmentStatusLabels } from "@/lib/labels";
@@ -50,6 +50,45 @@ type LoanVehicle = {
   model?: string;
   active?: boolean;
 };
+type LoanReservationLite = {
+  id: number;
+  loanVehicleId: number;
+  endDate: string | null;
+  appointmentId?: number | null;
+};
+
+/**
+ * Le rendez-vous tel que le calendrier le tient déjà en mémoire, quand on clique
+ * dessus. Il contient tout ce qu'il faut pour afficher le formulaire garni sans
+ * attendre : le modal s'ouvrait vide pendant deux secondes, le temps de cinq appels
+ * — dont le téléchargement de TOUTE la base clients et véhicules (650 Ko) pour n'en
+ * afficher qu'un. L'appel du RDV est conservé en arrière-plan, pour rattraper une
+ * modification faite par un autre poste depuis le dernier rafraîchissement.
+ */
+export type AppointmentSeed = {
+  id: number;
+  clientId?: number | null;
+  vehicleId?: number | null;
+  categoryId?: number | null;
+  statusId?: number | null;
+  prestation?: string | null;
+  appointmentType?: string;
+  appointmentSubType?: string | null;
+  comment?: string | null;
+  smsReminder: boolean;
+  loanVehicleId?: number | null;
+  loanStartDate?: string | null;
+  loanEndDate?: string | null;
+  clientFirstName?: string;
+  clientLastName?: string;
+  vehicleLicensePlate?: string;
+  vehicleBrand?: string | null;
+  vehicleModel?: string | null;
+};
+
+// Délai entre la dernière frappe et la recherche serveur : assez court pour ne
+// pas se voir, assez long pour qu'un mot tapé d'un trait ne fasse qu'un appel.
+const CLIENT_SEARCH_DEBOUNCE_MS = 250;
 
 const APPOINTMENT_TYPES = ["client", "note"] as const;
 const APPOINTMENT_TYPE_LABELS: Record<string, string> = {
@@ -79,14 +118,46 @@ const MIN_CLIENT_SEARCH_CHARS = 3;
 
 type AppointmentFormProps = {
   editingId: number | null;
+  /** Le RDV cliqué, déjà en mémoire dans le calendrier. Voir `AppointmentSeed`. */
+  initialAppointment?: AppointmentSeed | null;
   initialStart?: Date;
   initialEnd?: Date;
   categories: Category[];
   statuses: Status[];
+  // Parc et réservations de prêt, rendus par le serveur avec la page. Le
+  // formulaire les redemandait à chaque ouverture.
+  loanVehicles: LoanVehicle[];
+  loanReservations: LoanReservationLite[];
   defaultDurationMins?: number;
   onClose: () => void;
   onSaved: () => void;
 };
+
+function clientDepuisSeed(seed: AppointmentSeed | null): Client | null {
+  if (!seed?.clientId) return null;
+  return {
+    id: seed.clientId,
+    firstName: seed.clientFirstName ?? "",
+    lastName: seed.clientLastName ?? "",
+    vehicles: seed.vehicleId
+      ? [
+          {
+            id: seed.vehicleId,
+            licensePlate: seed.vehicleLicensePlate ?? "",
+            brand: seed.vehicleBrand ?? undefined,
+            model: seed.vehicleModel ?? undefined,
+          },
+        ]
+      : [],
+  };
+}
+
+function dureeDepuisMinutes(mins: number, repli: number): number {
+  const match =
+    DURATION_OPTIONS.find((o) => o.value === mins) ??
+    DURATION_OPTIONS.find((o) => o.value >= mins);
+  return match?.value ?? repli;
+}
 
 function getDefaultCategoryId(categories: Category[]): number | "" {
   if (!categories.length) return "";
@@ -96,32 +167,57 @@ function getDefaultCategoryId(categories: Category[]): number | "" {
 
 export default function AppointmentForm({
   editingId,
+  initialAppointment = null,
   initialStart,
   initialEnd,
   categories,
   statuses,
+  loanVehicles,
+  loanReservations,
   defaultDurationMins = 15,
   onClose,
   onSaved,
 }: AppointmentFormProps) {
-  const [clients, setClients] = useState<Client[]>([]);
-  const [clientId, setClientId] = useState<number | "">("");
-  const [vehicleId, setVehicleId] = useState<number | "">("");
-  const [categoryId, setCategoryId] = useState<number | "">(getDefaultCategoryId(categories));
-  const [statusId, setStatusId] = useState<number | "">(statuses[0]?.id ?? "");
+  // Le RDV en mémoire ne vaut que s'il est bien celui qu'on modifie.
+  const seed = editingId != null && initialAppointment?.id === editingId ? initialAppointment : null;
+  const seedType: "client" | "note" = seed?.appointmentType === "note" ? "note" : "client";
+
+  // Le client choisi, avec ses véhicules. Il vient soit d'une recherche, soit —
+  // en modification — d'un appel par identifiant ; en attendant cet appel, la
+  // version partielle portée par le RDV (nom, et le seul véhicule du RDV) suffit à
+  // afficher le formulaire.
+  const [selectedClient, setSelectedClient] = useState<Client | null>(() => clientDepuisSeed(seed));
+  // Résultats de la recherche serveur. La liste complète des clients n'est plus
+  // jamais téléchargée.
+  const [searchResults, setSearchResults] = useState<Client[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [clientId, setClientId] = useState<number | "">(seed?.clientId ?? "");
+  const [vehicleId, setVehicleId] = useState<number | "">(seed?.vehicleId ?? "");
+  const [categoryId, setCategoryId] = useState<number | "">(
+    seed ? (seed.categoryId ?? "") : getDefaultCategoryId(categories)
+  );
+  const [statusId, setStatusId] = useState<number | "">(
+    seed ? (seed.statusId ?? "") : (statuses[0]?.id ?? "")
+  );
   const [startDate, setStartDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [durationMins, setDurationMins] = useState(defaultDurationMins);
-  const [prestation, setPrestation] = useState("");
-  const [appointmentType, setAppointmentType] = useState<"client" | "note">("client");
-  const [clientSubType, setClientSubType] = useState<ClientSubType>("reception");
-  const [loanVehicles, setLoanVehicles] = useState<LoanVehicle[]>([]);
-  const [loanReservations, setLoanReservations] = useState<{ id: number; loanVehicleId: number; endDate: string | null; appointmentId: number | null }[]>([]);
-  const [loanVehicleId, setLoanVehicleId] = useState<number | "">("");
-  const [loanStartDate, setLoanStartDate] = useState("");
-  const [loanEndDate, setLoanEndDate] = useState("");
-  const [comment, setComment] = useState("");
-  const [smsReminder, setSmsReminder] = useState(true);
+  const [prestation, setPrestation] = useState(seed?.prestation ?? "");
+  const [appointmentType, setAppointmentType] = useState<"client" | "note">(seedType);
+  const [clientSubType, setClientSubType] = useState<ClientSubType>(
+    seedType === "client" && CLIENT_SUB_TYPES.includes(seed?.appointmentSubType as ClientSubType)
+      ? (seed!.appointmentSubType as ClientSubType)
+      : "reception"
+  );
+  const [loanVehicleId, setLoanVehicleId] = useState<number | "">(seed?.loanVehicleId ?? "");
+  const [loanStartDate, setLoanStartDate] = useState(
+    seed?.loanStartDate ? format(parseISO(seed.loanStartDate), "yyyy-MM-dd") : ""
+  );
+  const [loanEndDate, setLoanEndDate] = useState(
+    seed?.loanEndDate ? format(parseISO(seed.loanEndDate), "yyyy-MM-dd") : ""
+  );
+  const [comment, setComment] = useState(seed?.comment ?? "");
+  const [smsReminder, setSmsReminder] = useState(seed?.smsReminder ?? true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -156,28 +252,38 @@ export default function AppointmentForm({
     }
     if (initialEnd && initialStart) {
       const mins = differenceInMinutes(initialEnd, initialStart);
-      const match =
-        DURATION_OPTIONS.find((o) => o.value === mins) ??
-        DURATION_OPTIONS.find((o) => o.value >= mins);
-      setDurationMins(match?.value ?? DURATION_OPTIONS[0].value);
+      setDurationMins(dureeDepuisMinutes(mins, DURATION_OPTIONS[0].value));
     } else if (!editingId) {
-      fetch("/api/proxy/settings")
-        .then((r) => r.json())
-        .then((settings: { key: string; value: string }[]) => {
-          const map: Record<string, string> = {};
-          if (Array.isArray(settings)) settings.forEach((s) => (map[s.key] = s.value));
-          const raw = map.calendarDefaultDurationMinutes || "15";
-          const parsed = parseInt(raw, 10);
-          const mins = ALLOWED_DURATIONS.includes(parsed) ? parsed : 15;
-          setDurationMins(mins);
-        })
-        .catch(() => setDurationMins(defaultDurationMins));
+      // La durée par défaut arrive avec la page, lue des réglages par le serveur :
+      // le formulaire refaisait un appel `/settings` pour retrouver la même valeur.
+      setDurationMins(ALLOWED_DURATIONS.includes(defaultDurationMins) ? defaultDurationMins : 15);
     }
   }, [initialStart, initialEnd, editingId, defaultDurationMins]);
 
   useEffect(() => {
     if (categories.length && !categoryId) setCategoryId(getDefaultCategoryId(categories));
   }, [categories, categoryId]);
+
+  // Fiche complète d'un client, par identifiant, avec ses véhicules. Un seul
+  // appel en vol par identifiant : le RDV en mémoire et l'appel du RDV peuvent
+  // demander le même client à quelques millisecondes d'écart.
+  const clientDemande = useRef<number | null>(null);
+  const loadClient = useCallback((id: number) => {
+    if (clientDemande.current === id) return;
+    clientDemande.current = id;
+    fetch(`/api/proxy/clients/${id}?withVehicles=true`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c: Client | null) => {
+        if (c && typeof c.id === "number") setSelectedClient(c);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (seed?.clientId) loadClient(seed.clientId);
+    // Au montage seulement : le seed ne change pas pendant la vie du formulaire.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!editingId) return;
@@ -202,27 +308,54 @@ export default function AppointmentForm({
         setStartDate(format(start, "yyyy-MM-dd"));
         setStartTime(format(start, "HH:mm"));
         const mins = differenceInMinutes(end, start);
-        const match =
-          DURATION_OPTIONS.find((o) => o.value === mins) ??
-          DURATION_OPTIONS.find((o) => o.value >= mins);
-        setDurationMins(match?.value ?? DURATION_OPTIONS[DURATION_OPTIONS.length - 1].value);
+        setDurationMins(dureeDepuisMinutes(mins, DURATION_OPTIONS[DURATION_OPTIONS.length - 1].value));
         setComment(apt.comment || "");
         setSmsReminder(apt.smsReminder ?? true);
+        if (apt.clientId) loadClient(apt.clientId);
       })
       .catch(() => {});
-  }, [editingId]);
+  }, [editingId, loadClient]);
 
-  useEffect(() => {
-    Promise.all([
-      fetch("/api/proxy/loanVehicles").then((r) => r.json()),
-      fetch("/api/proxy/loanReservations").then((r) => r.json()),
-    ])
-      .then(([vehicles, reservations]) => {
-        setLoanVehicles(Array.isArray(vehicles) ? vehicles : []);
-        setLoanReservations(Array.isArray(reservations) ? reservations : []);
-      })
-      .catch(() => {});
+  // Recherche serveur, avec délai après la dernière frappe. Une réponse arrivée
+  // après une saisie plus récente est ignorée : « dup » puis « dupont » ne doivent
+  // pas finir par afficher les résultats de « dup ».
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchSeq = useRef(0);
+  const handleClientSearch = useCallback((query: string) => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    const seq = ++searchSeq.current;
+    setSearching(true);
+    searchTimer.current = setTimeout(() => {
+      fetch(`/api/proxy/clients?withVehicles=true&search=${encodeURIComponent(query)}`)
+        .then((r) => (r.ok ? r.json() : []))
+        .then((data) => {
+          if (seq !== searchSeq.current) return;
+          setSearchResults(Array.isArray(data) ? data : []);
+          setSearching(false);
+        })
+        .catch(() => {
+          if (seq !== searchSeq.current) return;
+          setSearchResults([]);
+          setSearching(false);
+        });
+    }, CLIENT_SEARCH_DEBOUNCE_MS);
   }, []);
+  useEffect(
+    () => () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    },
+    []
+  );
+
+  // Ce que voit le sélecteur : le client choisi en tête, puis les résultats. Le
+  // choisi doit y être pour que le champ affiche son nom.
+  const pickerClients = useMemo(
+    () =>
+      selectedClient
+        ? [selectedClient, ...searchResults.filter((c) => c.id !== selectedClient.id)]
+        : searchResults,
+    [selectedClient, searchResults]
+  );
 
   // Réservation de prêt liée au RDV en cours de modification : le contrat s'obtient
   // par l'identifiant de la RÉSERVATION, pas du rendez-vous. Absente sur un
@@ -233,23 +366,7 @@ export default function AppointmentForm({
   }, [loanReservations, editingId]);
 
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/proxy/clients?withVehicles=true")
-      .then((r) => r.json())
-      .then((data) => {
-        if (!cancelled) setClients(Array.isArray(data) ? data : []);
-      })
-      .catch(() => {
-        if (!cancelled) setClients([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const selectedClient = clients.find((c) => c.id === clientId);
-  const vehicles = selectedClient?.vehicles ?? [];
+  const vehicles = useMemo(() => selectedClient?.vehicles ?? [], [selectedClient]);
 
   useEffect(() => {
     if (!vehicles.length) {
@@ -268,13 +385,18 @@ export default function AppointmentForm({
     setShowClientModal(false);
     const id = typeof newClient?.id === "number" ? newClient.id : null;
     if (id == null) return;
-    fetch("/api/proxy/clients?withVehicles=true")
-      .then((r) => r.json())
-      .then((data) => {
-        setClients(Array.isArray(data) ? data : []);
-        setClientId(id);
-      })
-      .catch(() => {});
+    // La fiche rendue par la création suffit : un client neuf n'a pas de véhicule,
+    // inutile de recharger quoi que ce soit.
+    setSelectedClient({
+      id,
+      firstName: (newClient.firstName as string) ?? "",
+      lastName: (newClient.lastName as string) ?? "",
+      email: (newClient.email as string | undefined) ?? undefined,
+      phone: (newClient.phone as string | undefined) ?? undefined,
+      vehicles: [],
+    });
+    setClientId(id);
+    setVehicleId("");
   }
 
   function handleVehicleCreated(record: Record<string, unknown>) {
@@ -287,14 +409,9 @@ export default function AppointmentForm({
       brand: record.brand as string | undefined,
       model: record.model as string | undefined,
     };
-    // On l'insère dans la fiche du client plutôt que de recharger toute la liste :
-    // le choix ci-contre est alimenté par `clients`, et un aller-retour de plus
-    // n'apporterait rien. Même façon de faire que sur le nouveau document.
-    setClients((prev) =>
-      prev.map((c) =>
-        c.id === clientId ? { ...c, vehicles: [...(c.vehicles ?? []), nouveau] } : c
-      )
-    );
+    // On l'insère dans la fiche du client plutôt que de la recharger : un
+    // aller-retour de plus n'apporterait rien.
+    setSelectedClient((c) => (c ? { ...c, vehicles: [...(c.vehicles ?? []), nouveau] } : c));
     setVehicleId(id);
   }
 
@@ -509,20 +626,20 @@ export default function AppointmentForm({
                   <div className="flex gap-2 min-w-0">
                     <div className="flex-1 min-w-0">
                       <ClientPicker
-                        clients={clients}
+                        clients={pickerClients}
                         value={clientId}
                         onChange={(c) => {
+                          setSelectedClient(c);
                           setClientId(c?.id ?? "");
                           // Le premier véhicule du client suit le choix ; sans client,
                           // il n'y a plus de véhicule à proposer.
                           setVehicleId(c?.vehicles?.[0]?.id ?? "");
                         }}
                         label={(c) => `${c.lastName} ${c.firstName}`}
-                        // Ce formulaire acceptait les deux ordres de saisie, et il est le
-                        // seul : on lui conserve ce comportement.
-                        haystack={(c) =>
-                          `${c.firstName} ${c.lastName} ${c.lastName} ${c.firstName}`
-                        }
+                        // Recherche côté serveur : elle accepte nom ou prénom dans
+                        // n'importe quel ordre, et aussi téléphone, ville, email.
+                        onSearch={handleClientSearch}
+                        searching={searching}
                         minChars={MIN_CLIENT_SEARCH_CHARS}
                         placeholder="Rechercher un client (min. 3 caractères)..."
                         emptyLabel="Aucun client trouvé"

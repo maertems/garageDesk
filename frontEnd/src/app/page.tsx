@@ -32,13 +32,19 @@ export default async function HomePage() {
   // La session est vérifiée DANS le même lot que les données, et non avant : elle
   // était attendue seule, ce qui ajoutait un aller-retour complet à chaque
   // affichage — la page la plus coûteuse du site, avec ses six appels.
-  const [session, settings, categories, statuses, leaveRequests, loanReservations, appointments] = await Promise.all([
+  // Réservations de prêt SANS borne de date, et parc de prêt : le calendrier filtre
+  // les réservations jour par jour, et le formulaire de RDV a besoin des deux
+  // listes entières pour griser les véhicules déjà sortis — il les redemandait
+  // lui-même à chaque ouverture. La borne par mois excluait d'ailleurs une
+  // réservation à cheval sur deux mois.
+  const [session, settings, categories, statuses, leaveRequests, loanReservations, loanVehicles, appointments] = await Promise.all([
     verifierSession(cookie),
     apiJson<{ key: string; value: string }[]>("/api/v1/settings", cookie).catch(() => []),
     apiJson<{ id: number; code: string; color: string }[]>("/api/v1/appointmentCategories", cookie).catch(() => []),
     apiJson<{ id: number; code: string; color: string }[]>("/api/v1/appointmentStatuses", cookie).catch(() => []),
     apiJson<LeaveRequest[]>(`/api/v1/leaveRequests?month=${month}&year=${year}`, cookie).catch(() => []),
-    apiJson<LoanReservation[]>(`/api/v1/loanReservations?start=${startMonth}&end=${endMonth}`, cookie).catch(() => []),
+    apiJson<LoanReservation[]>("/api/v1/loanReservations", cookie).catch(() => []),
+    apiJson<LoanVehicle[]>("/api/v1/loanVehicles", cookie).catch(() => []),
     apiJson<Appointment[]>(
       `/api/v1/appointments?start=${debutRdv.toISOString()}&end=${finRdv.toISOString()}`,
       cookie
@@ -82,6 +88,7 @@ export default async function HomePage() {
         statuses={statuses}
         leaveRequests={Array.isArray(leaveRequests) ? leaveRequests : []}
         loanReservations={Array.isArray(loanReservations) ? loanReservations : []}
+        loanVehicles={Array.isArray(loanVehicles) ? loanVehicles : []}
     />
   );
 }
@@ -100,9 +107,19 @@ type LoanReservation = {
   id: number;
   loanVehicleId: number;
   clientId: number;
+  appointmentId?: number | null;
   startDate: string;
-  endDate: string;
+  endDate: string | null;
   loanVehicleUniqueNumber?: string;
   clientFirstName?: string;
   clientLastName?: string;
+};
+
+type LoanVehicle = {
+  id: number;
+  uniqueNumber: string;
+  licensePlate: string;
+  brand?: string;
+  model?: string;
+  active?: boolean;
 };

@@ -52,6 +52,16 @@ type ClientPickerProps<T extends PickableClient> = {
   inputClassName?: string;
   /** Préfixe des identifiants ARIA, à changer si deux champs coexistent. */
   idPrefix?: string;
+  /**
+   * Recherche côté serveur. Appelé à chaque frappe atteignant `minChars`, avec le
+   * texte saisi ; l'appelant renvoie les résultats dans `clients`. Dans ce mode,
+   * `clients` est pris tel quel, sans second filtre local : le serveur cherche
+   * aussi dans le téléphone ou la ville, qu'un filtre sur le nom aurait écartés.
+   * Sans lui, le composant filtre lui-même la liste reçue, comme avant.
+   */
+  onSearch?: (query: string) => void;
+  /** Vrai pendant qu'une recherche serveur est en cours : la liste le dit. */
+  searching?: boolean;
 };
 
 export default function ClientPicker<T extends PickableClient>({
@@ -68,6 +78,8 @@ export default function ClientPicker<T extends PickableClient>({
   emptyLabel,
   inputClassName,
   idPrefix = "client",
+  onSearch,
+  searching = false,
 }: ClientPickerProps<T>) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -98,7 +110,9 @@ export default function ClientPicker<T extends PickableClient>({
     const q = query.trim().toLowerCase();
     if (q.length < minChars) return minChars === 0 ? clients.slice(0, maxItems) : [];
     const cherche = (c: T) => (haystack ? haystack(c) : label(c)).toLowerCase();
-    const base = clients.filter((c) => cherche(c).includes(q)).slice(0, maxItems);
+    const base = onSearch
+      ? clients.slice(0, maxItems)
+      : clients.filter((c) => cherche(c).includes(q)).slice(0, maxItems);
     // Le client déjà choisi reste proposé même s'il sort du filtre : sans cela, en
     // modification, la liste s'ouvrait sans contenir la fiche en cours.
     if (selected && !base.some((c) => c.id === selected.id)) {
@@ -164,7 +178,10 @@ export default function ClientPicker<T extends PickableClient>({
     setActif(-1);
   }
 
-  const listeVisible = open && (filtered.length > 0 || (!!emptyLabel && query.trim().length >= minChars));
+  const assezLongPourChercher = query.trim().length >= minChars;
+  const listeVisible =
+    open &&
+    (filtered.length > 0 || ((searching || !!emptyLabel) && assezLongPourChercher));
 
   function auClavier(e: React.KeyboardEvent<HTMLInputElement>) {
     const assezLong = query.trim().length >= minChars;
@@ -220,10 +237,13 @@ export default function ClientPicker<T extends PickableClient>({
           autoComplete="off"
           className={cn(withIcon && "pl-8", inputClassName)}
           onChange={(e) => {
-            setQuery(e.target.value);
+            const texte = e.target.value;
+            setQuery(texte);
             setActif(-1);
             onChange(null);
-            setOpen(e.target.value.trim().length >= minChars);
+            const assezLong = texte.trim().length >= minChars;
+            setOpen(assezLong);
+            if (assezLong) onSearch?.(texte.trim());
           }}
           onFocus={() => {
             if (query.trim().length >= minChars) setOpen(true);
@@ -244,7 +264,9 @@ export default function ClientPicker<T extends PickableClient>({
           className="absolute z-50 mt-1 w-full max-h-56 overflow-y-auto rounded-md border bg-popover shadow-md"
         >
           {filtered.length === 0 ? (
-            <div className="px-3 py-2.5 text-sm text-muted-foreground">{emptyLabel}</div>
+            <div className="px-3 py-2.5 text-sm text-muted-foreground">
+              {searching ? "Recherche…" : emptyLabel}
+            </div>
           ) : (
             filtered.map((c, i) => (
               <div
