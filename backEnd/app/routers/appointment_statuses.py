@@ -13,7 +13,11 @@ router = APIRouter(prefix="/appointmentStatuses", tags=["appointmentStatuses"])
 @router.get("", response_model=list[AppointmentStatusResponse])
 def list_statuses(current_user: dict = Depends(get_current_user)):
     with db_cursor() as cur:
-        cur.execute("SELECT id, code, color FROM appointmentStatuses ORDER BY code")
+        # `sortOrder` et non `code` : le tri alphabétique du code anglais proposait
+        # « Commande faite » AVANT « Commande à passer », ce qui invite à l'erreur
+        # de saisie. L'ordre est celui de l'enchaînement du travail (migration 031),
+        # et `code` ne sert plus que de départage.
+        cur.execute("SELECT id, code, color FROM appointmentStatuses ORDER BY sortOrder, code")
         rows = cur.fetchall()
     return [AppointmentStatusResponse(**r) for r in rows]
 

@@ -1,8 +1,11 @@
 /** Unique mapping: API codes (English) to French display labels. */
 
+// Dans l'ordre de l'enchaînement du travail, celui que rend l'API depuis la
+// migration 031. L'ordre d'affichage vient de `sortOrder` en base, pas d'ici.
 export const appointmentStatusLabels: Record<string, string> = {
   quoteToDo: "Devis à faire",
   orderToPlace: "Commande à passer",
+  orderPlaced: "Commande faite",
   partsReceived: "Pièces reçues",
 };
 
