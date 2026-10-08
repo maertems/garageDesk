@@ -1,7 +1,7 @@
 "use client";
 
 import { format, parseISO } from "date-fns";
-import { appointmentStatusLabels, getLabel } from "@/lib/labels";
+import { appointmentStatusLabels, libelleReferentiel } from "@/lib/labels";
 
 /**
  * Contenu des deux infobulles du calendrier, extrait de CalendarView pour être
@@ -18,6 +18,7 @@ import { appointmentStatusLabels, getLabel } from "@/lib/labels";
 export type AppointmentTooltipData = {
   appointmentType?: string;
   statusCode?: string;
+  statusLabel?: string | null;
   statusColor?: string;
   clientFirstName?: string;
   clientLastName?: string;
@@ -93,14 +94,22 @@ function texteSur(fond: string): string {
 }
 
 /** Cartouche de l'état : son libellé sur sa couleur. */
-export function StatusBadge({ code, color }: { code: string; color?: string }) {
+export function StatusBadge({
+  code,
+  label,
+  color,
+}: {
+  code: string;
+  label?: string | null;
+  color?: string;
+}) {
   const fond = color?.trim() || "#9ca3af";
   return (
     <span
       className="inline-block rounded px-1.5 py-0.5 text-[11px] font-medium leading-none"
       style={{ background: fond, color: texteSur(fond) }}
     >
-      {getLabel(appointmentStatusLabels, code) || code}
+      {libelleReferentiel(label, appointmentStatusLabels, code) || code}
     </span>
   );
 }
@@ -136,7 +145,7 @@ export function AppointmentTooltipBody({ apt }: { apt: AppointmentTooltipData })
           qui n'en porte pas. */}
       {!isNote && apt.statusCode && (
         <div className="mt-1">
-          <StatusBadge code={apt.statusCode} color={apt.statusColor} />
+          <StatusBadge code={apt.statusCode} label={apt.statusLabel} color={apt.statusColor} />
         </div>
       )}
     </>

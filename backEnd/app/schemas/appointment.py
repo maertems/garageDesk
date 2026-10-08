@@ -77,6 +77,10 @@ class AppointmentWithJoinsResponse(CamelModel):
     vehicleModel: Optional[str] = None
     categoryCode: Optional[str] = None
     statusCode: Optional[str] = None
+    # Libellés joints depuis le référentiel, en base depuis la migration 032 :
+    # l'interface n'a plus à les connaître pour les afficher.
+    categoryLabel: Optional[str] = None
+    statusLabel: Optional[str] = None
     categoryColor: Optional[str] = None
     statusColor: Optional[str] = None
     # Finition du véhicule du client, affichée dans l'infobulle du calendrier.

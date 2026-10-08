@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import ReferentielEditor, { lignesDepuis, type Entree, type Ligne } from "./ReferentielEditor";
 
 const SECTION_HEADER = "px-4 py-2 border-b bg-secondary/40";
 const SECTION_TITLE = "text-xs font-semibold uppercase tracking-wider text-muted-foreground";
@@ -13,137 +14,15 @@ const SECTION_CARD = "rounded-lg border bg-card overflow-hidden";
 const selectStyles =
   "flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
-/** Catégories et statuts ont la même forme et la même route de mise à jour. */
-export type ColoredCode = { id: number; code: string; color?: string | null };
-export type AppointmentCategory = ColoredCode;
-export type AppointmentStatus = ColoredCode;
-
-/**
- * Les couleurs stockées ne sont pas garanties hexadécimales : la colonne est un
- * `VARCHAR(32)` sans validation, et la valeur part telle quelle dans le style du
- * bloc de rendez-vous. Or `<input type="color">` n'accepte qu'un `#rrggbb` et
- * ramène silencieusement tout le reste à `#000000` — ouvrir cette page suffirait
- * donc à proposer du noir pour une catégorie enregistrée en `red`. D'où deux
- * précautions : cette normalisation ne sert qu'à l'AFFICHAGE du sélecteur, et
- * seules les lignes réellement touchées sont enregistrées.
- */
-function normaliserHex(valeur: string | null | undefined, defaut: string): string {
-  const v = (valeur ?? "").trim();
-  if (/^#[0-9a-f]{6}$/i.test(v)) return v.toLowerCase();
-  // Forme courte : #abc vaut #aabbcc.
-  const court = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(v);
-  if (court) return `#${court[1]}${court[1]}${court[2]}${court[2]}${court[3]}${court[3]}`.toLowerCase();
-  return defaut;
-}
+/** Catégories et états : même forme, même routes. Le type vient de l'éditeur. */
+export type AppointmentCategory = Entree;
+export type AppointmentStatus = Entree;
 
 // Replis EXACTEMENT ceux du calendrier (`CalendarView.tsx`) : sans cela, le
 // sélecteur montrerait pour une couleur absente autre chose que ce qui est
 // réellement dessiné à l'écran.
 const DEFAUT_CATEGORIE = "#e0e0e0";
 const DEFAUT_STATUT = "#999999";
-
-/** Vrai si la valeur stockée n'est pas une couleur que le sélecteur sait montrer. */
-function hexIllisible(valeur: string | null | undefined): boolean {
-  const v = (valeur ?? "").trim();
-  if (!v) return false;
-  return !/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v);
-}
-
-/**
- * Une section de couleurs, pour les catégories comme pour les statuts.
- *
- * `apercu` dit comment la couleur est employée dans le calendrier, et l'aperçu le
- * reproduit : la catégorie peint le **fond** du bloc, le statut sa **bordure
- * gauche de 6 px**. Montrer les deux pareil laisserait juger une lisibilité qui
- * n'est pas celle de l'écran réel.
- */
-function SectionCouleurs({
-  titre,
-  note,
-  prefixe,
-  items,
-  couleurs,
-  onChange,
-  apercu,
-  defaut,
-  vide,
-}: {
-  titre: string;
-  note: string;
-  prefixe: string;
-  items: ColoredCode[];
-  couleurs: Record<number, string>;
-  onChange: (id: number, valeur: string) => void;
-  apercu: "fond" | "bordure";
-  defaut: string;
-  vide: string;
-}) {
-  return (
-    <section className={SECTION_CARD}>
-      <header className={SECTION_HEADER}>
-        <h3 className={SECTION_TITLE}>{titre}</h3>
-      </header>
-      <div className="p-4">
-        {items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{vide}</p>
-        ) : (
-          <>
-            <p className="mb-3 text-xs text-muted-foreground">{note}</p>
-            <div className="space-y-3">
-              {items.map((it) => {
-                const couleur = couleurs[it.id] ?? defaut;
-                return (
-                  <div key={it.id} className="flex items-center gap-3">
-                    <input
-                      type="color"
-                      id={`${prefixe}-${it.id}`}
-                      value={couleur}
-                      onChange={(e) => onChange(it.id, e.target.value)}
-                      className="h-9 w-14 shrink-0 cursor-pointer rounded-md border border-input bg-card p-1"
-                    />
-                    <Label
-                      htmlFor={`${prefixe}-${it.id}`}
-                      className="flex-1 cursor-pointer first-letter:capitalize"
-                    >
-                      {it.code}
-                    </Label>
-                    <span
-                      className="rounded px-2 py-0.5 text-[11px] font-medium first-letter:capitalize"
-                      style={
-                        apercu === "fond"
-                          ? { background: couleur }
-                          : {
-                              background: DEFAUT_CATEGORIE,
-                              borderLeft: `6px solid ${couleur}`,
-                            }
-                      }
-                    >
-                      {it.code}
-                    </span>
-                    <span className="w-16 shrink-0 text-right font-mono text-xs text-muted-foreground">
-                      {couleur}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-            {items.some((it) => hexIllisible(it.color)) && (
-              <p className="mt-3 text-xs text-muted-foreground">
-                {items
-                  .filter((it) => hexIllisible(it.color))
-                  .map((it) => `${it.code} : « ${it.color} »`)
-                  .join(", ")}{" "}
-                — cette valeur n&apos;est pas hexadécimale et le sélecteur ne peut pas la
-                montrer. Elle reste en base tant que vous n&apos;y touchez pas ; la
-                changer l&apos;écrasera.
-              </p>
-            )}
-          </>
-        )}
-      </div>
-    </section>
-  );
-}
 
 export default function SettingsForm(props: {
   initial?: Record<string, string>;
@@ -154,17 +33,19 @@ export default function SettingsForm(props: {
   const categories = props.initialCategories ?? [];
   const statuts = props.initialStatuses ?? [];
   const router = useRouter();
-  // Couleurs en cours d'édition, par identifiant.
-  const [couleurs, setCouleurs] = useState<Record<number, string>>(() =>
-    Object.fromEntries(categories.map((c) => [c.id, normaliserHex(c.color, DEFAUT_CATEGORIE)]))
+  // Référentiels en cours d'édition. L'ordre du tableau EST l'ordre d'affichage :
+  // `sortOrder` est recalculé à l'enregistrement, personne n'ayant envie de gérer
+  // des dizaines à la main.
+  const [lignesCategories, setLignesCategories] = useState(() =>
+    lignesDepuis(categories, DEFAUT_CATEGORIE)
   );
-  const [couleursStatuts, setCouleursStatuts] = useState<Record<number, string>>(() =>
-    Object.fromEntries(statuts.map((s) => [s.id, normaliserHex(s.color, DEFAUT_STATUT)]))
+  const [lignesStatuts, setLignesStatuts] = useState(() =>
+    lignesDepuis(statuts, DEFAUT_STATUT)
   );
-  // Lignes que l'utilisateur a effectivement changées : ce sont les SEULES qui
-  // partiront en PATCH, pour la raison expliquée au-dessus.
-  const [touchees, setTouchees] = useState<number[]>([]);
-  const [toucheesStatuts, setToucheesStatuts] = useState<number[]>([]);
+  // Référence du départ, pour n'envoyer que ce qui a vraiment changé.
+  const [categoriesInitiales] = useState(() => lignesDepuis(categories, DEFAUT_CATEGORIE));
+  const [statutsInitiales] = useState(() => lignesDepuis(statuts, DEFAUT_STATUT));
+  const [erreurReferentiel, setErreurReferentiel] = useState("");
   const toFullHour = (t: string) => {
     const h = parseInt(t.slice(0, 2), 10) || 0;
     return `${String(Math.max(0, Math.min(23, h))).padStart(2, "0")}:00`;
@@ -248,27 +129,88 @@ export default function SettingsForm(props: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ value: hourHeightPx }),
       }),
-      // Les couleurs ne sont pas des réglages clé/valeur : chaque catégorie et
-      // chaque statut est une ressource à part, d'où un PATCH par ligne touchée.
-      ...touchees.map((id) =>
-        fetch(`/api/proxy/appointmentCategories/${id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ color: couleurs[id] }),
-        })
-      ),
-      ...toucheesStatuts.map((id) =>
-        fetch(`/api/proxy/appointmentStatuses/${id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ color: couleursStatuts[id] }),
-        })
-      ),
     ]);
-    setTouchees([]);
-    setToucheesStatuts([]);
+
+    // Les référentiels ne sont pas des réglages clé/valeur : chaque entrée est une
+    // ressource, avec sa création, sa modification et sa suppression.
+    const erreurs = [
+      ...(await appliquerReferentiel("appointmentCategories", lignesCategories, categoriesInitiales)),
+      ...(await appliquerReferentiel("appointmentStatuses", lignesStatuts, statutsInitiales)),
+    ];
+    setErreurReferentiel(erreurs.join(" "));
     setSaving(false);
-    router.refresh();
+
+    // Rechargement SEULEMENT si tout est passé. `router.refresh()` remonte ce
+    // composant et remet son état à zéro — mesuré : une ligne marquée supprimée
+    // redevient normale en 0,7 s. En cas d'échec, cela effacerait d'un coup le
+    // message d'erreur ET les modifications en attente : l'utilisateur verrait son
+    // travail disparaître sans savoir pourquoi.
+    //
+    // Quand tout est passé, le rechargement est au contraire nécessaire : les
+    // identifiants des entrées créées ne sont connus que du serveur.
+    if (erreurs.length === 0) router.refresh();
+  }
+
+  /**
+   * Applique un référentiel : modifications, créations, puis suppressions.
+   *
+   * Cet ordre n'est pas indifférent. Les suppressions viennent en DERNIER parce
+   * qu'elles peuvent être refusées — une entrée encore utilisée par des
+   * rendez-vous rend un 409 — et qu'un refus ne doit pas empêcher le reste
+   * d'être enregistré.
+   *
+   * Rend la liste des messages d'erreur, vide si tout est passé.
+   */
+  async function appliquerReferentiel(
+    ressource: string,
+    lignes: Ligne[],
+    initiales: Ligne[]
+  ): Promise<string[]> {
+    const erreurs: string[] = [];
+    const parId = new Map(initiales.map((l) => [l.id, l]));
+
+    const envoyer = async (url: string, method: string, corps?: unknown) => {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        ...(corps ? { body: JSON.stringify(corps) } : {}),
+      });
+      if (res.ok) return true;
+      const d = await res.json().catch(() => ({}));
+      erreurs.push(d.detail?.message || d.message || "Erreur lors de l'enregistrement.");
+      return false;
+    };
+
+    // L'ordre d'affichage est celui du tableau ; `sortOrder` est recalculé ici,
+    // espacé de dix comme en base, et ne compte que les lignes qui restent.
+    let rang = 0;
+    for (const l of lignes) {
+      if (l.supprimee) continue;
+      rang += 10;
+      const avant = l.id != null ? parId.get(l.id) : undefined;
+      const corps = {
+        label: l.label.trim() || null,
+        color: l.color,
+        sortOrder: rang,
+      };
+      if (l.id == null) {
+        await envoyer(`/api/proxy/${ressource}`, "POST", { ...corps, code: l.code });
+      } else if (
+        avant &&
+        (avant.label !== l.label.trim() ||
+          avant.color !== l.color ||
+          initiales.indexOf(avant) * 10 + 10 !== rang)
+      ) {
+        await envoyer(`/api/proxy/${ressource}/${l.id}`, "PATCH", corps);
+      }
+    }
+
+    for (const l of lignes) {
+      if (l.supprimee && l.id != null) {
+        await envoyer(`/api/proxy/${ressource}/${l.id}`, "DELETE");
+      }
+    }
+    return erreurs;
   }
 
   return (
@@ -414,35 +356,35 @@ export default function SettingsForm(props: {
         </div>
       </section>
 
-      <SectionCouleurs
-        titre="Couleurs des catégories"
-        note="C'est le fond du bloc de rendez-vous dans le calendrier. L'aperçu montre le libellé tel qu'il s'affichera par-dessus."
+      <ReferentielEditor
+        titre="Catégories de rendez-vous"
+        note="La couleur est le fond du bloc dans le calendrier. L'aperçu montre le libellé tel qu'il s'affichera."
         prefixe="categorie"
-        items={categories}
-        couleurs={couleurs}
+        lignes={lignesCategories}
+        onChange={setLignesCategories}
         apercu="fond"
-        defaut={DEFAUT_CATEGORIE}
-        vide="Aucune catégorie de rendez-vous n'a pu être lue."
-        onChange={(id, valeur) => {
-          setCouleurs((p) => ({ ...p, [id]: valeur }));
-          setTouchees((p) => (p.includes(id) ? p : [...p, id]));
-        }}
+        couleurDefaut={DEFAUT_CATEGORIE}
+        fondApercu={DEFAUT_CATEGORIE}
+        enregistrement={saving}
       />
 
-      <SectionCouleurs
-        titre="Couleurs des statuts"
-        note="C'est la bordure gauche du bloc de rendez-vous, sur 6 px, par-dessus la couleur de la catégorie."
+      <ReferentielEditor
+        titre="États de rendez-vous"
+        note="La couleur borde le bloc à gauche, sur 6 px, par-dessus celle de la catégorie. L'ordre est celui de l'enchaînement du travail."
         prefixe="statut"
-        items={statuts}
-        couleurs={couleursStatuts}
+        lignes={lignesStatuts}
+        onChange={setLignesStatuts}
         apercu="bordure"
-        defaut={DEFAUT_STATUT}
-        vide="Aucun statut de rendez-vous n'a pu être lu."
-        onChange={(id, valeur) => {
-          setCouleursStatuts((p) => ({ ...p, [id]: valeur }));
-          setToucheesStatuts((p) => (p.includes(id) ? p : [...p, id]));
-        }}
+        couleurDefaut={DEFAUT_STATUT}
+        fondApercu={DEFAUT_CATEGORIE}
+        enregistrement={saving}
       />
+
+      {erreurReferentiel && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          {erreurReferentiel}
+        </div>
+      )}
 
       <Button type="submit" disabled={saving}>
         {saving && <Loader2 className="h-4 w-4 animate-spin" />}

@@ -30,8 +30,8 @@ def list_appointments(
                        c.firstName AS clientFirstName, c.lastName AS clientLastName,
                        v.licensePlate AS vehicleLicensePlate, v.brand AS vehicleBrand, v.model AS vehicleModel, v.type AS vehicleType,
                        lv.uniqueNumber AS loanVehicleUniqueNumber, lv.brand AS loanVehicleBrand, lv.model AS loanVehicleModel,
-                       ac.code AS categoryCode, ac.color AS categoryColor,
-                       ast.code AS statusCode, ast.color AS statusColor
+                       ac.code AS categoryCode, ac.label AS categoryLabel, ac.color AS categoryColor,
+                       ast.code AS statusCode, ast.label AS statusLabel, ast.color AS statusColor
                 FROM appointments a
                 LEFT JOIN clients c ON c.id = a.clientId
                 LEFT JOIN vehicles v ON v.id = a.vehicleId
@@ -52,8 +52,8 @@ def list_appointments(
                        c.firstName AS clientFirstName, c.lastName AS clientLastName,
                        v.licensePlate AS vehicleLicensePlate, v.brand AS vehicleBrand, v.model AS vehicleModel, v.type AS vehicleType,
                        lv.uniqueNumber AS loanVehicleUniqueNumber, lv.brand AS loanVehicleBrand, lv.model AS loanVehicleModel,
-                       ac.code AS categoryCode, ac.color AS categoryColor,
-                       ast.code AS statusCode, ast.color AS statusColor
+                       ac.code AS categoryCode, ac.label AS categoryLabel, ac.color AS categoryColor,
+                       ast.code AS statusCode, ast.label AS statusLabel, ast.color AS statusColor
                 FROM appointments a
                 LEFT JOIN clients c ON c.id = a.clientId
                 LEFT JOIN vehicles v ON v.id = a.vehicleId
@@ -79,8 +79,8 @@ def get_appointment(appointment_id: int, current_user: dict = Depends(get_curren
                    c.firstName AS clientFirstName, c.lastName AS clientLastName,
                    v.licensePlate AS vehicleLicensePlate, v.brand AS vehicleBrand, v.model AS vehicleModel, v.type AS vehicleType,
                    lv.uniqueNumber AS loanVehicleUniqueNumber, lv.brand AS loanVehicleBrand, lv.model AS loanVehicleModel,
-                   ac.code AS categoryCode, ac.color AS categoryColor,
-                   ast.code AS statusCode, ast.color AS statusColor
+                   ac.code AS categoryCode, ac.label AS categoryLabel, ac.color AS categoryColor,
+                   ast.code AS statusCode, ast.label AS statusLabel, ast.color AS statusColor
             FROM appointments a
             LEFT JOIN clients c ON c.id = a.clientId
             LEFT JOIN vehicles v ON v.id = a.vehicleId

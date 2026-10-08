@@ -124,3 +124,22 @@ export function getLabel(map: Record<string, string>, code: string | undefined |
   if (code == null) return "";
   return map[code] ?? code;
 }
+
+/**
+ * Libellé d'une entrée de référentiel : celui de la BASE d'abord.
+ *
+ * Depuis la migration 032, états et catégories portent leur libellé en base et
+ * se créent depuis Paramètres → Calendrier. Les tables ci-dessus ne servent plus
+ * que de repli, pour une installation où la migration n'aurait pas été jouée —
+ * sans quoi l'écran afficherait les codes anglais. En dernier ressort, le code
+ * lui-même, qui reste lisible.
+ */
+export function libelleReferentiel(
+  labelEnBase: string | null | undefined,
+  repli: Record<string, string>,
+  code: string | undefined | null
+): string {
+  const l = (labelEnBase ?? "").trim();
+  if (l) return l;
+  return getLabel(repli, code);
+}

@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { format, addMinutes, parseISO, differenceInMinutes } from "date-fns";
 import { AlertTriangle, FileText, Info, Loader2, Plus, Trash2 } from "lucide-react";
-import { getLabel, appointmentCategoryLabels, appointmentStatusLabels } from "@/lib/labels";
+import { libelleReferentiel, appointmentCategoryLabels, appointmentStatusLabels } from "@/lib/labels";
 import {
   Dialog,
   DialogContent,
@@ -37,8 +37,11 @@ type Client = {
   phone?: string;
   vehicles?: { id: number; licensePlate: string; brand?: string; model?: string }[];
 };
-type Category = { id: number; code: string; color: string };
-type Status = { id: number; code: string; color: string };
+// `label` depuis la migration 032 : facultatif, parce que l'API d'une
+// installation non migrée ne le rendra pas et que le repli de `labels.ts` prend
+// alors la main.
+type Category = { id: number; code: string; label?: string | null; color: string };
+type Status = { id: number; code: string; label?: string | null; color: string };
 type LoanVehicle = {
   id: number;
   uniqueNumber: string;
@@ -634,7 +637,7 @@ export default function AppointmentForm({
                             className="inline-block h-3 w-3 rounded-sm"
                             style={{ background: c.color }}
                           />
-                          {getLabel(appointmentCategoryLabels, c.code)}
+                          {libelleReferentiel(c.label, appointmentCategoryLabels, c.code)}
                         </label>
                       ))}
                     </div>
@@ -647,7 +650,7 @@ export default function AppointmentForm({
                       >
                         {statuses.map((s) => (
                           <option key={s.id} value={s.id}>
-                            {getLabel(appointmentStatusLabels, s.code)}
+                            {libelleReferentiel(s.label, appointmentStatusLabels, s.code)}
                           </option>
                         ))}
                       </select>
