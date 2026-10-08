@@ -1,45 +1,36 @@
-"use client";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { apiJson } from "@/lib/api";
+import FacturationTabs from "./FacturationTabs";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
-
-// Sous-navigation interne du module Facturation.
-// "Documents" couvre la liste unifiée (/facturation) ET les pages de
-// création/détail d'un document (/facturation/documents/...), sans quoi
-// startsWith("/facturation/") capturerait aussi Factures/Avoirs/etc.
-const tabs: { href: string; label: string; exact?: boolean; extraPrefix?: string }[] = [
-  { href: "/facturation", label: "Documents", exact: true, extraPrefix: "/facturation/documents" },
-  { href: "/facturation/factures", label: "Factures" },
-  { href: "/facturation/avoirs", label: "Avoirs" },
-];
-
-export default function FacturationLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-
-  const isActive = (t: (typeof tabs)[number]) => {
-    if (t.extraPrefix && pathname?.startsWith(t.extraPrefix)) return true;
-    return t.exact ? pathname === t.href : pathname === t.href || pathname?.startsWith(t.href + "/");
-  };
+/**
+ * Module de facturation, réservé aux administrateurs tant qu'il est en bêta.
+ *
+ * Le contrôle est ici, côté serveur, et pas seulement dans la barre latérale :
+ * un lien masqué n'empêche personne de saisir l'adresse. Même garde que
+ * `settings/layout.tsx`, et il couvre tout le sous-arbre — documents, factures,
+ * avoirs, création — sans qu'il faille y penser page par page.
+ *
+ * ⚠️ Ceci protège l'ÉCRAN, pas les données : les routes `/api/v1/documents`,
+ * `/invoices` et `/creditNotes` restent ouvertes à tout utilisateur connecté.
+ * Fermer l'API est un autre sujet, et il touche aussi la synchronisation.
+ */
+export default async function FacturationLayout({ children }: { children: React.ReactNode }) {
+  const cookieStore = await cookies();
+  const cookie = cookieStore.toString();
+  let user: { role?: string } | null = null;
+  try {
+    user = await apiJson<{ role?: string }>("/api/v1/auth/me", cookie);
+  } catch {
+    redirect("/login");
+  }
+  if (!user || user.role !== "admin") {
+    redirect("/");
+  }
 
   return (
     <div className="flex flex-col min-h-screen">
-      <nav className="flex items-center gap-1 border-b bg-card px-6 overflow-x-auto">
-        {tabs.map((t) => (
-          <Link
-            key={t.href}
-            href={t.href}
-            className={cn(
-              "px-3 py-3 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors",
-              isActive(t)
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {t.label}
-          </Link>
-        ))}
-      </nav>
+      <FacturationTabs />
       <div className="flex-1">{children}</div>
     </div>
   );

@@ -29,22 +29,24 @@ type NavLink = {
   adminOnly?: boolean;
 };
 
-const group1: NavLink[] = [
+// Trois groupes, séparés par un trait. Ordre voulu par le garage : le quotidien
+// d'abord, la facturation isolée, l'administration à la fin.
+const groupeQuotidien: NavLink[] = [
   { href: "/", label: "Accueil", icon: Calendar },
+  { href: "/clients", label: "Clients", icon: Users, matchPrefix: "/clients" },
+  { href: "/vehicles", label: "Véhicules", icon: Car, matchPrefix: "/vehicles" },
   { href: "/documents", label: "Documents", icon: FileText, matchPrefix: "/documents" },
   { href: "/loan-vehicles", label: "Véhicules de prêt", icon: KeyRound, matchPrefix: "/loan-vehicles" },
 ];
 
-const groupBilling: NavLink[] = [
-  { href: "/facturation", label: "Facturation", icon: ReceiptText, matchPrefix: "/facturation" },
+// Réservé aux administrateurs tant que le module est en bêta. Le lien masqué ne
+// suffit pas : `facturation/layout.tsx` refait le contrôle côté serveur, sans quoi
+// l'adresse saisie à la main passerait.
+const groupeFacturation: NavLink[] = [
+  { href: "/facturation", label: "Facturation", icon: ReceiptText, matchPrefix: "/facturation", adminOnly: true },
 ];
 
-const group2: NavLink[] = [
-  { href: "/clients", label: "Clients", icon: Users, matchPrefix: "/clients" },
-  { href: "/vehicles", label: "Véhicules", icon: Car, matchPrefix: "/vehicles" },
-];
-
-const group3: NavLink[] = [
+const groupeAdministration: NavLink[] = [
   { href: "/employees/leave", label: "Congés", icon: CalendarOff, matchPrefix: "/employees/leave" },
   { href: "/settings", label: "Paramètres", icon: Settings, matchPrefix: "/settings", adminOnly: true },
   { href: "/admin", label: "Admin", icon: Shield, matchPrefix: "/admin", adminOnly: true },
@@ -122,7 +124,12 @@ export default function Sidebar({
     );
   }
 
-  const visibleGroup3 = group3.filter((l) => !l.adminOnly || role === "admin");
+  // Un groupe entièrement masqué ne doit pas laisser son trait de séparation :
+  // deux traits consécutifs sans rien entre eux se verraient.
+  const visible = (groupe: NavLink[]) =>
+    groupe.filter((l) => !l.adminOnly || role === "admin");
+  const facturationVisible = visible(groupeFacturation);
+  const administrationVisible = visible(groupeAdministration);
 
   return (
     <aside
@@ -166,15 +173,17 @@ export default function Sidebar({
 
       <nav className="flex-1 overflow-y-auto scrollbar-thin px-3 py-4">
         <ul className="space-y-1">
-          {group1.map((link) => <NavItem key={link.href} link={link} />)}
-          <li className="my-1 border-t border-border/50" />
-          {groupBilling.map((link) => <NavItem key={link.href} link={link} />)}
-          <li className="my-1 border-t border-border/50" />
-          {group2.map((link) => <NavItem key={link.href} link={link} />)}
-          {visibleGroup3.length > 0 && (
+          {groupeQuotidien.map((link) => <NavItem key={link.href} link={link} />)}
+          {facturationVisible.length > 0 && (
             <>
               <li className="my-1 border-t border-border/50" />
-              {visibleGroup3.map((link) => <NavItem key={link.href} link={link} />)}
+              {facturationVisible.map((link) => <NavItem key={link.href} link={link} />)}
+            </>
+          )}
+          {administrationVisible.length > 0 && (
+            <>
+              <li className="my-1 border-t border-border/50" />
+              {administrationVisible.map((link) => <NavItem key={link.href} link={link} />)}
             </>
           )}
         </ul>
