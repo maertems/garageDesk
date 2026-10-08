@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from app.database import db_cursor
+from app.database import db_cursor, db_transaction
 from app.auth import get_current_user
 from app.schemas.client import ClientCreate, ClientUpdate, ClientResponse, ClientWithVehiclesResponse
 from app.schemas.vehicle import VehicleResponse
+from app.services.client_account_service import prochain_numero_de_compte
 
 router = APIRouter(prefix="/clients", tags=["clients"])
 
@@ -83,7 +84,14 @@ def get_client(client_id: int, current_user: dict = Depends(get_current_user)):
 
 @router.post("", response_model=ClientResponse, status_code=201)
 def create_client(data: ClientCreate, current_user: dict = Depends(get_current_user)):
-    with db_cursor(commit=True) as cur:
+    # `db_transaction` et non `db_cursor` : le numéro de compte est réservé par un
+    # `SELECT ... FOR UPDATE` qui ne tient que jusqu'au commit. Avec deux
+    # connexions, deux créations simultanées recevraient le même numéro.
+    with db_transaction() as cur:
+        # Le numéro est attribué ICI, jamais reçu du client : la demande du garage
+        # est de ne plus le saisir. Un `accountNumber` présent dans la charge est
+        # donc ignoré en silence — il n'a aucune autorité sur la série.
+        numero = prochain_numero_de_compte(cur)
         cur.execute(
             """
             INSERT INTO clients (gender, firstName, lastName, phone, email, address, postalCode, city, clientType, vatNumber, siren, accountNumber, vmId)
@@ -101,7 +109,7 @@ def create_client(data: ClientCreate, current_user: dict = Depends(get_current_u
                 data.clientType,
                 data.vatNumber,
                 data.siren,
-                data.accountNumber,
+                numero,
                 data.vmId,
             ),
         )

@@ -15,8 +15,15 @@ class ClientBase(CamelModel):
     clientType: str = "individual"
     vatNumber: Optional[str] = None
     siren: Optional[str] = None
-    # Numéro de compte comptable, saisi à la main et recopié sur les factures
-    # (migration 028).
+    # Numéro de compte comptable, imprimé sur les factures et les avoirs.
+    #
+    # ATTRIBUÉ PAR LE BACKEND à la création, à partir de 41105001, et modifiable
+    # NULLE PART ensuite (voir `services/client_account_service.py`). Déclaré ici
+    # pour la LECTURE seule : ce modèle sert aussi aux réponses.
+    #
+    # Une valeur envoyée à la création est ignorée, et `ClientUpdate` ne porte pas
+    # ce champ — un PATCH ne peut donc pas le changer. Masquer le champ à l'écran
+    # n'aurait pas suffi : l'API reste joignable directement.
     accountNumber: Optional[str] = None
     vmId: Optional[int] = None
 
@@ -37,9 +44,6 @@ class ClientUpdate(CamelModel):
     clientType: Optional[str] = None
     vatNumber: Optional[str] = None
     siren: Optional[str] = None
-    # Numéro de compte comptable, saisi à la main et recopié sur les factures
-    # (migration 028).
-    accountNumber: Optional[str] = None
     vmId: Optional[int] = None
 
 

@@ -55,7 +55,9 @@ export default function ClientForm({ initial, onSaved, onClose }: ClientFormProp
   const [clientType, setClientType] = useState((initial?.clientType as string) ?? "individual");
   const [vatNumber, setVatNumber] = useState((initial?.vatNumber as string) ?? "");
   const [siren, setSiren] = useState((initial?.siren as string) ?? "");
-  const [accountNumber, setAccountNumber] = useState((initial?.accountNumber as string) ?? "");
+  // Affiché seulement : le numéro est attribué par le backend et ne se modifie
+  // nulle part, donc pas d'état — une simple lecture de la fiche.
+  const accountNumber = (initial?.accountNumber as string) ?? "";
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -78,7 +80,6 @@ export default function ClientForm({ initial, onSaved, onClose }: ClientFormProp
       clientType,
       vatNumber: isCompany ? vatNumber || undefined : undefined,
       siren: isCompany ? siren || undefined : undefined,
-      accountNumber: accountNumber || undefined,
     };
     const url = id ? `/api/proxy/clients/${id}` : "/api/proxy/clients";
     const method = id ? "PATCH" : "POST";
@@ -179,21 +180,29 @@ export default function ClientForm({ initial, onSaved, onClose }: ClientFormProp
           </div>
           {/* Hors de la section Entreprise à dessein : un particulier a un compte
               comptable comme une société, alors que N° TVA et SIREN n'ont de sens
-              que pour une société. */}
-          <div className="grid grid-cols-2 gap-3">
+              que pour une société.
+
+              Absent à la CRÉATION : le numéro est attribué par le backend, le
+              demander laisserait croire que la saisie compte. Il reste modifiable
+              sur une fiche existante, pour une correction ponctuelle. */}
+          {id ? (
             <div className="space-y-1.5">
-              <Label htmlFor="accountNumber">N° de compte</Label>
-              <Input
-                id="accountNumber"
-                value={accountNumber}
-                onChange={(e) => setAccountNumber(e.target.value)}
-                placeholder="41101518"
-              />
+              <Label>N° de compte</Label>
+              {/* Montré, jamais saisissable : le numéro est attribué par le backend
+                  et ne se modifie nulle part. Un champ désactivé plutôt qu'un
+                  `<Input disabled>` — rien à soumettre, donc rien à griser. */}
+              <p className="font-mono text-sm">
+                {accountNumber || <span className="text-muted-foreground">—</span>}
+              </p>
               <p className="text-xs text-muted-foreground">
-                Numéro venu de votre comptabilité. Imprimé sur les factures et les avoirs.
+                Attribué automatiquement. Imprimé sur les factures et les avoirs.
               </p>
             </div>
-          </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Le n° de compte sera attribué automatiquement à l&apos;enregistrement.
+            </p>
+          )}
         </div>
       </section>
 
