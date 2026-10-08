@@ -87,7 +87,7 @@ def create_client(data: ClientCreate, current_user: dict = Depends(get_current_u
         cur.execute(
             """
             INSERT INTO clients (gender, firstName, lastName, phone, email, address, postalCode, city, clientType, vatNumber, siren, accountNumber, vmId)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 data.gender,
