@@ -10,6 +10,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import ClientPicker from "@/components/clients/ClientPicker";
+import { useClientSearch } from "@/components/clients/useClientSearch";
 import ClientFormModal from "@/app/clients/ClientFormModal";
 import ClientModal from "@/app/clients/ClientModal";
 import { Button } from "@/components/ui/button";
@@ -110,7 +111,9 @@ export default function LoanReservationForm({
   onSaved,
 }: LoanReservationFormProps) {
   const isEdit = editingId != null;
-  const [clients, setClients] = useState<Client[]>([]);
+  // Recherche serveur : la liste complète des clients n'est plus téléchargée. En
+  // modification, le client s'affiche depuis la réservation, pas depuis ce champ.
+  const clientSearch = useClientSearch<Client>();
   const [vehicles, setVehicles] = useState<LoanVehicle[]>([]);
   const [activeReservations, setActiveReservations] = useState<{ id: number; loanVehicleId: number; endDate: string | null }[]>([]);
   const [reservation, setReservation] = useState<Reservation | null>(null);
@@ -135,12 +138,10 @@ export default function LoanReservationForm({
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/proxy/clients").then((r) => r.json()),
       fetch("/api/proxy/loanVehicles").then((r) => r.json()),
       fetch("/api/proxy/loanReservations").then((r) => r.json()),
     ])
-      .then(([cls, veh, reservations]) => {
-        setClients(Array.isArray(cls) ? cls : []);
+      .then(([veh, reservations]) => {
         setVehicles(Array.isArray(veh) ? veh : []);
         setActiveReservations(Array.isArray(reservations) ? reservations : []);
       })
@@ -314,14 +315,23 @@ export default function LoanReservationForm({
                       <div className="flex gap-2 min-w-0">
                         <div className="flex-1 min-w-0">
                           <ClientPicker
-                            clients={clients}
+                            clients={clientSearch.clients}
                             value={clientId}
-                            onChange={(c) => setClientId(c?.id ?? "")}
+                            onChange={(c) => {
+                              clientSearch.setSelected(c);
+                              setClientId(c?.id ?? "");
+                            }}
                             label={clientLabel}
-                            // Ce formulaire proposait toute la liste dès la mise au
-                            // point, sans minimum de saisie : on le conserve.
-                            minChars={0}
+                            // Ce formulaire proposait les quarante premiers clients
+                            // dès la mise au point, sans saisie. Avec une recherche
+                            // serveur, il faut taper quelque chose : deux caractères,
+                            // comme le nouveau document.
+                            onSearch={clientSearch.search}
+                            searching={clientSearch.searching}
+                            minChars={2}
                             maxItems={40}
+                            placeholder="Rechercher un client (min. 2 caractères)"
+                            emptyLabel="Aucun client trouvé"
                           />
                         </div>
                         <Button
@@ -567,9 +577,8 @@ export default function LoanReservationForm({
           setShowClientModal(false);
           const id = typeof c?.id === "number" ? c.id : null;
           if (id == null) return;
-          // Inséré dans la liste déjà en mémoire plutôt qu'un rechargement : la
-          // recherche ci-contre est alimentée par elle.
-          setClients((prev) => [...prev, c as unknown as Client]);
+          // La fiche rendue par la création suffit au champ pour afficher le nom.
+          clientSearch.setSelected(c as unknown as Client);
           setClientId(id);
         }}
       />

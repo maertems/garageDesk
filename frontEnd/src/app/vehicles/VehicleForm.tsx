@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DialogFooter } from "@/components/ui/dialog";
 import ClientPicker from "@/components/clients/ClientPicker";
+import { useClientSearch } from "@/components/clients/useClientSearch";
 
 type VehicleRecord = Record<string, unknown>;
 
@@ -59,13 +60,15 @@ export default function VehicleForm({ initial, onSaved, onClose, defaultClientId
   const [vin, setVin] = useState((initial?.vin as string) ?? "");
   const [mileage, setMileage] = useState(initial?.mileage != null ? String(initial.mileage) : "");
 
-  const [clients, setClients] = useState<Client[]>([]);
+  // Recherche serveur : la liste complète des clients n'est plus téléchargée. Le
+  // propriétaire déjà connu (modification, ou client présélectionné depuis un
+  // autre écran) est demandé par identifiant, pour que le champ affiche son nom.
+  const clientSearch = useClientSearch<Client>();
+  const { loadById } = clientSearch;
   useEffect(() => {
-    fetch("/api/proxy/clients")
-      .then((r) => r.json())
-      .then((d) => setClients(Array.isArray(d) ? d : []))
-      .catch(() => {});
-  }, []);
+    const connu = (initial?.clientId as number | undefined) || defaultClientId;
+    if (connu) loadById(connu);
+  }, [initial?.clientId, defaultClientId, loadById]);
 
   // Champs verouillés jusqu'à Vérifier ou Ignorer (création uniquement)
   const [unlocked, setUnlocked] = useState(!isNew);
@@ -149,10 +152,16 @@ export default function VehicleForm({ initial, onSaved, onClose, defaultClientId
         <div className="p-4">
           <div className="space-y-1.5">
             <ClientPicker
-              clients={clients}
+              clients={clientSearch.clients}
               value={clientId}
-              onChange={(c) => setClientId(c?.id ?? "")}
+              onChange={(c) => {
+                clientSearch.setSelected(c);
+                setClientId(c?.id ?? "");
+              }}
               label={clientLabel}
+              onSearch={clientSearch.search}
+              searching={clientSearch.searching}
+              emptyLabel="Aucun client trouvé"
               minChars={3}
               maxItems={40}
               withIcon

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { format, addMinutes, parseISO, differenceInMinutes } from "date-fns";
 import { AlertTriangle, FileText, Info, Loader2, Plus, Trash2 } from "lucide-react";
 import { libelleReferentiel, appointmentCategoryLabels, appointmentStatusLabels } from "@/lib/labels";
@@ -25,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import ClientForm from "@/app/clients/ClientForm";
 import ClientPicker from "@/components/clients/ClientPicker";
+import { useClientSearch } from "@/components/clients/useClientSearch";
 import VehicleFormModal from "@/app/vehicles/VehicleFormModal";
 import ClientModal from "@/app/clients/ClientModal";
 import VehicleModal from "@/app/vehicles/VehicleModal";
@@ -85,10 +86,6 @@ export type AppointmentSeed = {
   vehicleBrand?: string | null;
   vehicleModel?: string | null;
 };
-
-// Délai entre la dernière frappe et la recherche serveur : assez court pour ne
-// pas se voir, assez long pour qu'un mot tapé d'un trait ne fasse qu'un appel.
-const CLIENT_SEARCH_DEBOUNCE_MS = 250;
 
 const APPOINTMENT_TYPES = ["client", "note"] as const;
 const APPOINTMENT_TYPE_LABELS: Record<string, string> = {
@@ -185,12 +182,15 @@ export default function AppointmentForm({
   // Le client choisi, avec ses véhicules. Il vient soit d'une recherche, soit —
   // en modification — d'un appel par identifiant ; en attendant cet appel, la
   // version partielle portée par le RDV (nom, et le seul véhicule du RDV) suffit à
-  // afficher le formulaire.
-  const [selectedClient, setSelectedClient] = useState<Client | null>(() => clientDepuisSeed(seed));
-  // Résultats de la recherche serveur. La liste complète des clients n'est plus
-  // jamais téléchargée.
-  const [searchResults, setSearchResults] = useState<Client[]>([]);
-  const [searching, setSearching] = useState(false);
+  // afficher le formulaire. La liste complète des clients n'est plus téléchargée.
+  const {
+    clients: pickerClients,
+    selected: selectedClient,
+    setSelected: setSelectedClient,
+    searching,
+    search: handleClientSearch,
+    loadById: loadClient,
+  } = useClientSearch<Client>({ withVehicles: true, initialSelected: clientDepuisSeed(seed) });
   const [clientId, setClientId] = useState<number | "">(seed?.clientId ?? "");
   const [vehicleId, setVehicleId] = useState<number | "">(seed?.vehicleId ?? "");
   const [categoryId, setCategoryId] = useState<number | "">(
@@ -264,21 +264,7 @@ export default function AppointmentForm({
     if (categories.length && !categoryId) setCategoryId(getDefaultCategoryId(categories));
   }, [categories, categoryId]);
 
-  // Fiche complète d'un client, par identifiant, avec ses véhicules. Un seul
-  // appel en vol par identifiant : le RDV en mémoire et l'appel du RDV peuvent
-  // demander le même client à quelques millisecondes d'écart.
-  const clientDemande = useRef<number | null>(null);
-  const loadClient = useCallback((id: number) => {
-    if (clientDemande.current === id) return;
-    clientDemande.current = id;
-    fetch(`/api/proxy/clients/${id}?withVehicles=true`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((c: Client | null) => {
-        if (c && typeof c.id === "number") setSelectedClient(c);
-      })
-      .catch(() => {});
-  }, []);
-
+  // Fiche complète du client du RDV, demandée dès le montage.
   useEffect(() => {
     if (seed?.clientId) loadClient(seed.clientId);
     // Au montage seulement : le seed ne change pas pendant la vie du formulaire.
@@ -315,47 +301,6 @@ export default function AppointmentForm({
       })
       .catch(() => {});
   }, [editingId, loadClient]);
-
-  // Recherche serveur, avec délai après la dernière frappe. Une réponse arrivée
-  // après une saisie plus récente est ignorée : « dup » puis « dupont » ne doivent
-  // pas finir par afficher les résultats de « dup ».
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchSeq = useRef(0);
-  const handleClientSearch = useCallback((query: string) => {
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    const seq = ++searchSeq.current;
-    setSearching(true);
-    searchTimer.current = setTimeout(() => {
-      fetch(`/api/proxy/clients?withVehicles=true&search=${encodeURIComponent(query)}`)
-        .then((r) => (r.ok ? r.json() : []))
-        .then((data) => {
-          if (seq !== searchSeq.current) return;
-          setSearchResults(Array.isArray(data) ? data : []);
-          setSearching(false);
-        })
-        .catch(() => {
-          if (seq !== searchSeq.current) return;
-          setSearchResults([]);
-          setSearching(false);
-        });
-    }, CLIENT_SEARCH_DEBOUNCE_MS);
-  }, []);
-  useEffect(
-    () => () => {
-      if (searchTimer.current) clearTimeout(searchTimer.current);
-    },
-    []
-  );
-
-  // Ce que voit le sélecteur : le client choisi en tête, puis les résultats. Le
-  // choisi doit y être pour que le champ affiche son nom.
-  const pickerClients = useMemo(
-    () =>
-      selectedClient
-        ? [selectedClient, ...searchResults.filter((c) => c.id !== selectedClient.id)]
-        : searchResults,
-    [selectedClient, searchResults]
-  );
 
   // Réservation de prêt liée au RDV en cours de modification : le contrat s'obtient
   // par l'identifiant de la RÉSERVATION, pas du rendez-vous. Absente sur un

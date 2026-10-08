@@ -6,6 +6,7 @@ import { Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import ClientPicker from "@/components/clients/ClientPicker";
+import { useClientSearch } from "@/components/clients/useClientSearch";
 import { PageHeader, PageBody } from "@/components/layout/PageHeader";
 import { documentTypeLabels } from "@/lib/labels";
 import LineEditor, { emptyLine, type LineDraft } from "@/app/facturation/_components/LineEditor";
@@ -60,7 +61,9 @@ export default function NewDocumentPage() {
   const [header, setHeader] = useState<HeaderInfo | null>(null);
   const [parentDoc, setParentDoc] = useState<ParentDoc | null>(null);
 
-  const [clients, setClients] = useState<Client[]>([]);
+  // Recherche serveur, avec les véhicules de chaque résultat : la liste complète
+  // des clients n'est plus téléchargée à l'ouverture de la page.
+  const clientSearch = useClientSearch<Client>({ withVehicles: true });
   const [clientId, setClientId] = useState<number | null>(null);
   const [vehicleId, setVehicleId] = useState<number | null>(null);
   const [kilometrage, setKilometrage] = useState("");
@@ -88,16 +91,11 @@ export default function NewDocumentPage() {
     if (parentDocumentIdParam) {
       fetch(`/api/proxy/documents/${parentDocumentIdParam}`).then((r) => r.json()).then(setParentDoc).catch(() => {});
     }
-    if (!headerIdParam && !parentDocumentIdParam) {
-      fetch("/api/proxy/clients?withVehicles=true")
-        .then((r) => r.json())
-        .then((d) => setClients(Array.isArray(d) ? d : []))
-        .catch(() => {});
-    }
   }, [headerIdParam, parentDocumentIdParam]);
 
-  const selectedClient = clients.find((c) => c.id === clientId) ?? null;
+  const selectedClient = clientSearch.selected;
   function selectClient(c: Client) {
+    clientSearch.setSelected(c);
     setClientId(c.id);
     setVehicleId(c.vehicles?.[0]?.id ?? null);
   }
@@ -109,7 +107,6 @@ export default function NewDocumentPage() {
       lastName: record.lastName as string,
       vehicles: [],
     };
-    setClients((prev) => [c, ...prev]);
     setNewClientOpen(false);
     selectClient(c);
   }
@@ -121,7 +118,7 @@ export default function NewDocumentPage() {
       brand: record.brand as string | undefined,
       model: record.model as string | undefined,
     };
-    setClients((prev) => prev.map((c) => (c.id === clientId ? { ...c, vehicles: [...(c.vehicles ?? []), v] } : c)));
+    clientSearch.setSelected((c) => (c ? { ...c, vehicles: [...(c.vehicles ?? []), v] } : c));
     setNewVehicleOpen(false);
     setVehicleId(v.id);
   }
@@ -256,16 +253,20 @@ export default function NewDocumentPage() {
                 <div className="flex gap-2">
                   <div className="flex-1 min-w-0">
                     <ClientPicker
-                      clients={clients}
+                      clients={clientSearch.clients}
                       value={clientId}
                       onChange={(c) => {
                         if (c) selectClient(c);
                         else {
+                          clientSearch.setSelected(null);
                           setClientId(null);
                           setVehicleId(null);
                         }
                       }}
                       label={(c) => `${c.lastName.toUpperCase()} ${c.firstName ?? ""}`.trim()}
+                      onSearch={clientSearch.search}
+                      searching={clientSearch.searching}
+                      emptyLabel="Aucun client trouvé"
                       // Ce formulaire ouvrait dès deux caractères, et lui seul.
                       minChars={2}
                       maxItems={30}
