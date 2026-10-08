@@ -36,7 +36,10 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-card p-0 shadow-lg rounded-xl animate-scale-in max-h-[92vh] overflow-y-auto",
+        // `animate-dialog-in` et non une simple mise à l'échelle : l'animation doit
+        // porter elle-même le `translate(-50%, -50%)`, sinon elle l'efface le temps
+        // de jouer et la boîte apparaît décentrée (voir tailwind.config.ts).
+        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-card p-0 shadow-lg rounded-xl animate-dialog-in max-h-[92vh] overflow-y-auto",
         className
       )}
       {...props}

@@ -74,16 +74,24 @@ const config: Config = {
           from: { opacity: "0" },
           to: { opacity: "1" },
         },
-        "scale-in": {
-          from: { opacity: "0", transform: "scale(0.96)" },
-          to: { opacity: "1", transform: "scale(1)" },
+        // Ouverture de la boîte de dialogue. Le `translate(-50%, -50%)` qui la
+        // centre fait partie des images-clés : une animation qui n'écrivait que
+        // `scale()` remplaçait TOUTE la propriété `transform` pendant ses 150 ms,
+        // centrage compris — la boîte apparaissait en bas à droite, son coin haut
+        // gauche au centre de l'écran, puis sautait à sa place. Mesuré en Chrome :
+        // à la première image, `matrix(0.96, 0, 0, 0.96, 0, 0)`, bord gauche à
+        // 713 px pour une fenêtre de 1 400. Sur la machine du garage, plus lente,
+        // le saut se voyait à chaque ouverture.
+        "dialog-in": {
+          from: { opacity: "0", transform: "translate(-50%, -50%) scale(0.96)" },
+          to: { opacity: "1", transform: "translate(-50%, -50%) scale(1)" },
         },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "fade-in": "fade-in 0.15s ease-out",
-        "scale-in": "scale-in 0.15s ease-out",
+        "dialog-in": "dialog-in 0.15s ease-out",
       },
       boxShadow: {
         soft: "0 1px 2px rgba(16,24,40,0.04), 0 1px 3px rgba(16,24,40,0.06)",
