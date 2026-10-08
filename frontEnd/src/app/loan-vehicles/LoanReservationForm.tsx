@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Loader2, Trash2, CheckSquare, FileText } from "lucide-react";
+import { Loader2, Trash2, CheckSquare, FileText, Plus, Info } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +10,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import ClientPicker from "@/components/clients/ClientPicker";
+import ClientFormModal from "@/app/clients/ClientFormModal";
+import ClientModal from "@/app/clients/ClientModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,6 +56,30 @@ function todayLocal(): string {
   return toDateLocal(new Date().toISOString());
 }
 
+/** « 14:30 » depuis un ISO, en heure locale. */
+function toTimeLocal(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+// Choix proposés : la demi-heure, de 00:00 à 23:30. L'heure pleine seule serait
+// trop grossière — un véhicule se rend à 8h30 — et le quart d'heure allongerait
+// la liste sans servir ici.
+const HEURES = Array.from({ length: 48 }, (_, i) => {
+  const h = String(Math.floor(i / 2)).padStart(2, "0");
+  return `${h}:${i % 2 ? "30" : "00"}`;
+});
+
+/** L'heure courante, ramenée à la demi-heure inférieure : 14h37 donne 14:30. */
+function heureCouranteArrondie(): string {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${d.getMinutes() < 30 ? "00" : "30"}`;
+}
+
+// Fin par défaut : midi, choix du garage. Un prêt commencé le matin se rend le
+// plus souvent en fin de matinée.
+const HEURE_FIN_DEFAUT = "12:00";
+
 function formatLoanVehicleDisplay(r: Reservation): string {
   const model = [r.loanVehicleBrand, r.loanVehicleModel].filter(Boolean).join(" ") || "";
   const plate = r.loanVehicleLicensePlate ?? "";
@@ -93,6 +119,13 @@ export default function LoanReservationForm({
   const [loanVehicleId, setLoanVehicleId] = useState<number | "">("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  // Les colonnes sont des DATETIME depuis l'origine : l'heure était simplement
+  // forcée à minuit faute de champ. Aucune migration n'a donc été nécessaire.
+  const [startTime, setStartTime] = useState(heureCouranteArrondie);
+  const [showClientModal, setShowClientModal] = useState(false);
+  // Fiche consultée depuis le « i ». Nulle = fermée.
+  const [infoClientId, setInfoClientId] = useState<number | null>(null);
+  const [endTime, setEndTime] = useState(HEURE_FIN_DEFAUT);
   const [startMileage, setStartMileage] = useState("");
   const [fuelLevelEighths, setFuelLevelEighths] = useState<number | null>(null);
   const [endMileage, setEndMileage] = useState("");
@@ -128,6 +161,8 @@ export default function LoanReservationForm({
         setLoanVehicleId(r.loanVehicleId);
         setStartDate(toDateLocal(r.startDate));
         setEndDate(r.endDate ? toDateLocal(r.endDate) : "");
+        setStartTime(toTimeLocal(r.startDate));
+        if (r.endDate) setEndTime(toTimeLocal(r.endDate));
         setStartMileage(r.startMileage != null ? String(r.startMileage) : "");
         setFuelLevelEighths(r.fuelLevelEighths ?? null);
         setEndMileage(r.endMileage != null ? String(r.endMileage) : "");
@@ -151,9 +186,9 @@ export default function LoanReservationForm({
     const body: Record<string, unknown> = {
       clientId: Number(clientId),
       loanVehicleId: Number(loanVehicleId),
-      startDate: new Date(startDate + "T00:00:00").toISOString(),
+      startDate: new Date(`${startDate}T${startTime}:00`).toISOString(),
     };
-    if (endDate) body.endDate = new Date(endDate + "T00:00:00").toISOString();
+    if (endDate) body.endDate = new Date(`${endDate}T${endTime}:00`).toISOString();
     if (startMileage) body.startMileage = parseInt(startMileage, 10);
     if (fuelLevelEighths != null) body.fuelLevelEighths = fuelLevelEighths;
     const res = await fetch("/api/proxy/loanReservations", {
@@ -178,9 +213,9 @@ export default function LoanReservationForm({
     const finalEndDate = overrideEndDate !== undefined ? overrideEndDate : endDate;
     const body: Record<string, unknown> = {
       loanVehicleId: Number(loanVehicleId),
-      startDate: new Date(startDate + "T00:00:00").toISOString(),
+      startDate: new Date(`${startDate}T${startTime}:00`).toISOString(),
     };
-    if (finalEndDate) body.endDate = new Date(finalEndDate + "T00:00:00").toISOString();
+    if (finalEndDate) body.endDate = new Date(`${finalEndDate}T${endTime}:00`).toISOString();
     if (startMileage !== "") body.startMileage = parseInt(startMileage, 10);
     if (fuelLevelEighths != null) body.fuelLevelEighths = fuelLevelEighths;
     if (endMileage !== "") body.endMileage = parseInt(endMileage, 10);
@@ -276,16 +311,43 @@ export default function LoanReservationForm({
                   ) : (
                     <div className="space-y-1.5">
                       <Label>Client *</Label>
-                      <ClientPicker
-                        clients={clients}
-                        value={clientId}
-                        onChange={(c) => setClientId(c?.id ?? "")}
-                        label={clientLabel}
-                        // Ce formulaire proposait toute la liste dès la mise au point,
-                        // sans minimum de saisie : on le conserve.
-                        minChars={0}
-                        maxItems={40}
-                      />
+                      <div className="flex gap-2 min-w-0">
+                        <div className="flex-1 min-w-0">
+                          <ClientPicker
+                            clients={clients}
+                            value={clientId}
+                            onChange={(c) => setClientId(c?.id ?? "")}
+                            label={clientLabel}
+                            // Ce formulaire proposait toute la liste dès la mise au
+                            // point, sans minimum de saisie : on le conserve.
+                            minChars={0}
+                            maxItems={40}
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="shrink-0"
+                          onClick={() => setShowClientModal(true)}
+                          title="Ajouter un client"
+                          aria-label="Ajouter un client"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="shrink-0"
+                          disabled={!clientId}
+                          onClick={() => setInfoClientId(Number(clientId))}
+                          title="Voir la fiche du client"
+                          aria-label="Voir la fiche du client"
+                        >
+                          <Info className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   )}
                   <div className="space-y-1.5">
@@ -345,6 +407,39 @@ export default function LoanReservationForm({
                         value={endDate}
                         onChange={(e) => setEndDate(e.target.value)}
                       />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="startTime">Heure début</Label>
+                      <select
+                        id="startTime"
+                        value={startTime}
+                        onChange={(e) => setStartTime(e.target.value)}
+                        className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        {HEURES.map((h) => (
+                          <option key={h} value={h}>
+                            {h}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="endTime">Heure fin</Label>
+                      {/* Inerte sans date de fin : l'heure n'a alors rien à
+                          qualifier, le prêt étant en cours. */}
+                      <select
+                        id="endTime"
+                        value={endTime}
+                        disabled={!endDate}
+                        onChange={(e) => setEndTime(e.target.value)}
+                        className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {HEURES.map((h) => (
+                          <option key={h} value={h}>
+                            {h}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                   {isOngoing && (
@@ -462,6 +557,26 @@ export default function LoanReservationForm({
           )}
         </DialogFooter>
       </DialogContent>
+
+      {/* Création d'un client sans quitter la réservation. Le client créé est
+          aussitôt choisi : c'est pour lui qu'on venait. */}
+      <ClientFormModal
+        open={showClientModal}
+        onClose={() => setShowClientModal(false)}
+        onSaved={(c) => {
+          setShowClientModal(false);
+          const id = typeof c?.id === "number" ? c.id : null;
+          if (id == null) return;
+          // Inséré dans la liste déjà en mémoire plutôt qu'un rechargement : la
+          // recherche ci-contre est alimentée par elle.
+          setClients((prev) => [...prev, c as unknown as Client]);
+          setClientId(id);
+        }}
+      />
+
+      {/* Consultation seule : `hideEdit` retire le bouton « Modifier », qui
+          navigue vers la fiche et ferait perdre la réservation en cours. */}
+      <ClientModal clientId={infoClientId} onClose={() => setInfoClientId(null)} hideEdit />
     </Dialog>
   );
 }
