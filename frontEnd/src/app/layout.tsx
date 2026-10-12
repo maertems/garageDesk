@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import "./globals.css";
 import AppShell from "@/components/layout/AppShell";
+import { apiJson } from "@/lib/api";
 
 // Rendu à la requête, et non prérendu au build. Sans cela, Next.js fige le HTML
 // des routes statiques (/login, /loan-vehicles, /vehicles…) pendant `npm run
@@ -26,11 +28,20 @@ export const metadata: Metadata = {
   description: "Gestion des rendez-vous garage",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // L'utilisateur connecté, pour le menu de gauche. La barre latérale le
+  // demandait elle-même au navigateur, à chaque page : un aller-retour de plus
+  // par navigation, et les entrées réservées aux administrateurs apparaissaient
+  // après coup. Même appel que `verifierSession` dans les pages : Next ne le fait
+  // qu'une fois par requête. Sans session (page de connexion), `null`.
+  const cookie = (await cookies()).toString();
+  const user = await apiJson<{ login: string; role: string }>("/api/v1/auth/me", cookie).catch(
+    () => null
+  );
   return (
     <html lang="fr" suppressHydrationWarning>
       <body>
-        <AppShell appName={appName} remindersOff={remindersOff}>
+        <AppShell appName={appName} remindersOff={remindersOff} user={user}>
           {children}
         </AppShell>
       </body>

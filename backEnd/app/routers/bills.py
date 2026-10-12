@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.database import db_cursor
 from app.auth import get_current_user
 from app.schemas.bill import BillCreate, BillUpdate, BillResponse, BillListItemResponse
+from app.schemas.common import PAGE_LIMIT_MAX, PageResponse
 from app.schemas.bill_upsert import (
     UpsertBillPayload, UpsertBillResponse,
     UpsertCustomerInput, UpsertCarInput, UpsertDetailInput,
@@ -53,21 +54,116 @@ def get_pending_bills(current_user: dict = Depends(get_current_user)):
     return {"status": 100, "lastId": last_id, "billToCheck": bill_ids}
 
 
-@router.get("", response_model=list[BillListItemResponse], summary="List bills")
+# Documents que la page masque par défaut : annulés, introuvables, acomptes.
+_HIDDEN_WHERE = "(b.status = 'annule' OR b.type IN ('notFound', 'Acpt'))"
+
+# Colonnes de tri de la page Documents → expression SQL. Les libellés composés
+# (marque + modèle, nom + prénom) trient sur ce que l'écran affiche.
+_SORT_EXPR = {
+    "docNum": "b.docNum",
+    "dateDoc": "b.dateDoc",
+    "licensePlate": "v.licensePlate",
+    "vehicleModel": "CONCAT_WS(' ', v.brand, v.model)",
+    "client": "CONCAT_WS(' ', c.lastName, c.firstName)",
+    "type": "b.type",
+    "status": "b.status",
+}
+
+
+class BillPageResponse(PageResponse[BillListItemResponse]):
+    # Nombre de documents sans aucun filtre, et nombre de documents masqués par
+    # défaut : la page les affiche (« 20 sur 5 125 », « Afficher tout (312) »).
+    totalAll: int
+    hiddenCount: int
+
+
+@router.get(
+    "",
+    response_model=list[BillListItemResponse] | BillPageResponse,
+    summary="List bills",
+    description=(
+        "List bills, optionally those of one client or vehicle. With limit (and offset), returns a page "
+        "{items, total, totalAll, hiddenCount} filtered by the per-column filters (docNum, dateDoc, "
+        "licensePlate, vehicleModel, client, type, status), sorted by sortBy/order; cancelled, notFound "
+        "and Acpt documents are left out unless showAll=true."
+    ),
+)
 def list_bills(
     current_user: dict = Depends(get_current_user),
     client_id: int | None = Query(None, alias="clientId"),
     vehicle_id: int | None = Query(None, alias="vehicleId"),
+    doc_num: str | None = Query(None, alias="docNum"),
+    date_doc: str | None = Query(None, alias="dateDoc", description="Substring of the date, ISO or DD/MM/YYYY"),
+    license_plate: str | None = Query(None, alias="licensePlate"),
+    vehicle_model: str | None = Query(None, alias="vehicleModel", description="Substring of 'brand model'"),
+    client: str | None = Query(None, description="Substring of 'lastName firstName'"),
+    type_: str | None = Query(None, alias="type"),
+    status: str | None = Query(None),
+    show_all: bool = Query(False, alias="showAll"),
+    sort_by: str = Query("dateDoc", alias="sortBy"),
+    order: str = Query("desc"),
+    limit: int | None = Query(None, ge=1, le=PAGE_LIMIT_MAX, description="Page size; enables the paged response"),
+    offset: int = Query(0, ge=0),
 ):
+    conditions: list[str] = []
+    params: list = []
+    if client_id is not None:
+        conditions.append("b.customerId = %s")
+        params.append(client_id)
+    if vehicle_id is not None:
+        conditions.append("b.vehicleId = %s")
+        params.append(vehicle_id)
+
+    if limit is None:
+        # Réponse historique : la liste nue, sans filtres de colonne, dans l'ordre
+        # des dates. C'est ce qu'attendent la fiche client et la fiche véhicule.
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        with db_cursor() as cur:
+            cur.execute(f"{_LIST_QUERY} {where} ORDER BY b.dateDoc DESC, b.id DESC", params)
+            rows = cur.fetchall()
+        return [BillListItemResponse(**r) for r in rows]
+
+    # Filtres de colonne de la page Documents — les mêmes `includes` que le
+    # navigateur appliquait à la liste complète, en LIKE.
+    def like(expr: str, value: str | None) -> None:
+        if value:
+            conditions.append(f"{expr} LIKE %s")
+            params.append(f"%{value}%")
+
+    like("CAST(b.docNum AS CHAR)", doc_num)
+    if date_doc:
+        conditions.append("(CAST(b.dateDoc AS CHAR) LIKE %s OR DATE_FORMAT(b.dateDoc, '%%d/%%m/%%Y') LIKE %s)")
+        params.extend([f"%{date_doc}%"] * 2)
+    like("v.licensePlate", license_plate)
+    like("CONCAT_WS(' ', v.brand, v.model)", vehicle_model)
+    like("CONCAT_WS(' ', c.lastName, c.firstName)", client)
+    like("b.type", type_)
+    like("b.status", status)
+    if not show_all:
+        conditions.append(f"NOT {_HIDDEN_WHERE}")
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    sort_expr = _SORT_EXPR.get(sort_by, "b.dateDoc")
+    order_dir = "ASC" if order.lower() == "asc" else "DESC"
+    # `b.id` en second critère : un tri stable d'une page à l'autre.
+    order_by = f"ORDER BY {sort_expr} {order_dir}, b.id {order_dir}"
+
+    list_from = _LIST_QUERY[_LIST_QUERY.index("FROM"):]
     with db_cursor() as cur:
-        if client_id is not None:
-            cur.execute(_LIST_QUERY + " WHERE b.customerId = %s ORDER BY b.dateDoc DESC, b.id DESC", (client_id,))
-        elif vehicle_id is not None:
-            cur.execute(_LIST_QUERY + " WHERE b.vehicleId = %s ORDER BY b.dateDoc DESC, b.id DESC", (vehicle_id,))
-        else:
-            cur.execute(_LIST_QUERY + " ORDER BY b.dateDoc DESC, b.id DESC")
+        cur.execute(f"SELECT COUNT(*) AS n {list_from} {where}", params)
+        total = cur.fetchone()["n"]
+        cur.execute("SELECT COUNT(*) AS n FROM bills b")
+        total_all = cur.fetchone()["n"]
+        cur.execute(f"SELECT COUNT(*) AS n FROM bills b WHERE {_HIDDEN_WHERE}")
+        hidden = cur.fetchone()["n"]
+        cur.execute(f"{_LIST_QUERY} {where} {order_by} LIMIT %s OFFSET %s", params + [limit, offset])
         rows = cur.fetchall()
-    return [BillListItemResponse(**r) for r in rows]
+    return BillPageResponse(
+        items=[BillListItemResponse(**r) for r in rows],
+        total=total,
+        totalAll=total_all,
+        hiddenCount=hidden,
+    )
 
 
 @router.get("/{bill_id}", response_model=BillResponse)

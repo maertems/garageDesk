@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.database import db_cursor, db_transaction
 from app.auth import get_current_user
 from app.schemas.client import ClientCreate, ClientUpdate, ClientResponse, ClientWithVehiclesResponse
+from app.schemas.common import PAGE_LIMIT_MAX, PageResponse
 from app.schemas.vehicle import VehicleResponse
 from app.services.client_account_service import prochain_numero_de_compte
 
@@ -11,12 +12,29 @@ _COLUMNS = ("id, gender, firstName, lastName, phone, email, address, postalCode,
             "clientType, vatNumber, siren, accountNumber, vmId")
 _VALID_SORT = {"lastName", "firstName", "city", "postalCode", "phone", "email"}
 
+# « jean dupont » comme « dupont jean » doivent trouver la fiche : la page des
+# clients filtrait ainsi dans le navigateur, sur la liste complète. Les deux
+# concaténations s'ajoutent aux colonnes prises une à une.
+_SEARCH_WHERE = (
+    "(lastName LIKE %s OR firstName LIKE %s OR city LIKE %s OR postalCode LIKE %s "
+    "OR phone LIKE %s OR email LIKE %s "
+    "OR CONCAT_WS(' ', firstName, lastName) LIKE %s OR CONCAT_WS(' ', lastName, firstName) LIKE %s)"
+)
+_SEARCH_PARAMS = 8
+
 
 @router.get(
     "",
-    response_model=list[ClientResponse] | list[ClientWithVehiclesResponse],
+    response_model=list[ClientResponse]
+    | list[ClientWithVehiclesResponse]
+    | PageResponse[ClientResponse]
+    | PageResponse[ClientWithVehiclesResponse],
     summary="List clients",
-    description="List clients. Use search to filter by any field (name, city, postalCode, phone, email). Use sortBy and order. Use withVehicles=true to include vehicles.",
+    description=(
+        "List clients. Use search to filter by any field (name, city, postalCode, phone, email). "
+        "Use sortBy and order. Use withVehicles=true to include vehicles. "
+        "With limit (and offset), returns a page: {items, total}."
+    ),
 )
 def list_clients(
     current_user: dict = Depends(get_current_user),
@@ -24,34 +42,38 @@ def list_clients(
     sort_by: str | None = Query("lastName", alias="sortBy", description="Sort column: lastName, firstName, city, postalCode, phone, email"),
     order: str = Query("asc", description="Sort order: asc or desc"),
     with_vehicles: bool = Query(False, alias="withVehicles"),
+    limit: int | None = Query(None, ge=1, le=PAGE_LIMIT_MAX, description="Page size; enables the paged response"),
+    offset: int = Query(0, ge=0),
 ):
     order_dir = "DESC" if order and order.lower() == "desc" else "ASC"
     sort_col = sort_by if sort_by in _VALID_SORT else "lastName"
+    where = ""
+    params: list = []
+    if search:
+        q = f"%{search}%"
+        where = f"WHERE {_SEARCH_WHERE}"
+        params = [q] * _SEARCH_PARAMS
+    order_by = f"ORDER BY {sort_col} {order_dir}, lastName, firstName"
+    total = None
     with db_cursor() as cur:
-        if search:
-            q = f"%{search}%"
+        if limit is not None:
+            cur.execute(f"SELECT COUNT(*) AS n FROM clients {where}", params)
+            total = cur.fetchone()["n"]
             cur.execute(
-                f"""
-                SELECT {_COLUMNS}
-                FROM clients
-                WHERE lastName LIKE %s OR firstName LIKE %s OR city LIKE %s OR postalCode LIKE %s OR phone LIKE %s OR email LIKE %s
-                ORDER BY {sort_col} {order_dir}, lastName, firstName
-                """,
-                (q, q, q, q, q, q),
+                f"SELECT {_COLUMNS} FROM clients {where} {order_by} LIMIT %s OFFSET %s",
+                params + [limit, offset],
             )
         else:
-            cur.execute(
-                f"""
-                SELECT {_COLUMNS}
-                FROM clients
-                ORDER BY {sort_col} {order_dir}, lastName, firstName
-                """
-            )
+            cur.execute(f"SELECT {_COLUMNS} FROM clients {where} {order_by}", params)
         rows = cur.fetchall()
     if not with_vehicles:
-        return [ClientResponse(**r) for r in rows]
-    by_client = _vehicles_by_client([r["id"] for r in rows])
-    return [ClientWithVehiclesResponse(**r, vehicles=by_client.get(r["id"], [])) for r in rows]
+        items = [ClientResponse(**r) for r in rows]
+    else:
+        by_client = _vehicles_by_client([r["id"] for r in rows])
+        items = [ClientWithVehiclesResponse(**r, vehicles=by_client.get(r["id"], [])) for r in rows]
+    if total is None:
+        return items
+    return PageResponse(items=items, total=total)
 
 
 # Au-delà de ce nombre de clients, les véhicules sont lus en une passe sur toute la

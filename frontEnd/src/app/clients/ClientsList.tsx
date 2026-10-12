@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, Plus, Search, Users } from "lucide-react";
+import { useState, useRef, useCallback } from "react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Loader2, Plus, Search, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -14,11 +14,13 @@ import {
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LoadError } from "@/components/ui/load-error";
+import { Pager, type Page } from "@/components/ui/pager";
 import { PageHeader, PageBody } from "@/components/layout/PageHeader";
+import { useDebouncedEffect } from "@/lib/use-debounced-effect";
 import ClientModal from "./ClientModal";
 import ClientFormModal from "./ClientFormModal";
 
-type Client = {
+export type Client = {
   id: number;
   firstName: string;
   lastName: string;
@@ -30,6 +32,16 @@ type Client = {
 };
 
 type SortKey = "name" | "city" | "phone" | "email";
+// Colonne de tri de l'écran → colonne de l'API. « Nom / Prénom » trie sur le nom,
+// l'API ajoute le prénom en second critère.
+const SORT_COLUMN: Record<SortKey, string> = {
+  name: "lastName",
+  city: "city",
+  phone: "phone",
+  email: "email",
+};
+
+export const CLIENTS_PAGE_SIZE = 50;
 
 function SortIcon({ active, order }: { active: boolean; order: "asc" | "desc" }) {
   if (!active) return <ArrowUpDown className="h-3.5 w-3.5 opacity-40" />;
@@ -40,66 +52,67 @@ function SortIcon({ active, order }: { active: boolean; order: "asc" | "desc" })
   );
 }
 
+/**
+ * La liste était rendue ENTIÈRE — 1 136 lignes, 334 Ko — puis filtrée et triée
+ * dans le navigateur. Elle est maintenant paginée, filtrée et triée par l'API :
+ * la première page arrive avec la page, les suivantes et les recherches passent
+ * par le proxy. La recherche attend 250 ms après la dernière frappe.
+ */
 export default function ClientsList({
-  initialClients,
+  initialPage,
   erreur = false,
 }: {
-  initialClients: Client[];
+  initialPage: Page<Client>;
   erreur?: boolean;
 }) {
-  const [clients, setClients] = useState(initialClients);
+  const [items, setItems] = useState<Client[]>(initialPage.items);
+  const [total, setTotal] = useState(initialPage.total);
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<SortKey>("name");
   const [order, setOrder] = useState<"asc" | "desc">("asc");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(CLIENTS_PAGE_SIZE);
+  const [loading, setLoading] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
   const [newClientOpen, setNewClientOpen] = useState(false);
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return clients;
-    const q = search.toLowerCase().trim();
-    return clients.filter((c) => {
-      const name = `${c.firstName} ${c.lastName}`.toLowerCase();
-      const city = (c.city ?? "").toLowerCase();
-      const postal = (c.postalCode ?? "").toLowerCase();
-      const phone = (c.phone ?? "").toLowerCase();
-      const email = (c.email ?? "").toLowerCase();
-      return (
-        name.includes(q) ||
-        city.includes(q) ||
-        postal.includes(q) ||
-        phone.includes(q) ||
-        email.includes(q)
-      );
+  // Une réponse arrivée après une demande plus récente est ignorée.
+  const seq = useRef(0);
+  const charger = useCallback(() => {
+    const mine = ++seq.current;
+    setLoading(true);
+    const params = new URLSearchParams({
+      sortBy: SORT_COLUMN[sortBy],
+      order,
+      limit: String(pageSize),
+      offset: String((page - 1) * pageSize),
     });
-  }, [clients, search]);
+    if (search.trim()) params.set("search", search.trim());
+    fetch(`/api/proxy/clients?${params}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: Page<Client> | null) => {
+        if (mine !== seq.current) return;
+        if (data && Array.isArray(data.items)) {
+          setItems(data.items);
+          setTotal(data.total);
+        }
+        setLoading(false);
+      })
+      .catch(() => {
+        if (mine === seq.current) setLoading(false);
+      });
+  }, [search, sortBy, order, page, pageSize]);
 
-  const sorted = useMemo(() => {
-    const list = [...filtered];
-    list.sort((a, b) => {
-      let cmp = 0;
-      if (sortBy === "name") {
-        cmp = (a.lastName + " " + a.firstName).localeCompare(b.lastName + " " + b.firstName);
-      } else if (sortBy === "city") {
-        cmp = (a.city ?? "").localeCompare(b.city ?? "");
-      } else if (sortBy === "phone") {
-        cmp = (a.phone ?? "").localeCompare(b.phone ?? "");
-      } else if (sortBy === "email") {
-        cmp = (a.email ?? "").localeCompare(b.email ?? "");
-      }
-      return order === "asc" ? cmp : -cmp;
-    });
-    return list;
-  }, [filtered, sortBy, order]);
+  useDebouncedEffect(charger, [search], 250);
+  useDebouncedEffect(charger, [sortBy, order, page, pageSize], 0);
 
   function handleSort(key: SortKey) {
-    setSortBy((prev) => {
-      if (prev === key) {
-        setOrder((o) => (o === "asc" ? "desc" : "asc"));
-        return key;
-      }
+    if (sortBy === key) setOrder((o) => (o === "asc" ? "desc" : "asc"));
+    else {
+      setSortBy(key);
       setOrder("asc");
-      return key;
-    });
+    }
+    setPage(1);
   }
 
   const SortHeader = ({ label, sortKey }: { label: string; sortKey: SortKey }) => (
@@ -111,11 +124,13 @@ export default function ClientsList({
     </TableHead>
   );
 
+  const vide = !loading && total === 0;
+
   return (
     <>
       <PageHeader
         title="Clients"
-        description={`${clients.length} client${clients.length > 1 ? "s" : ""} enregistré${clients.length > 1 ? "s" : ""}`}
+        description={`${total} client${total > 1 ? "s" : ""}${search.trim() ? " trouvé" : " enregistré"}${total > 1 ? "s" : ""}`}
         search={
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -123,9 +138,15 @@ export default function ClientsList({
               type="search"
               placeholder="Nom, ville, téléphone..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
               className="pl-9"
             />
+            {loading && (
+              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+            )}
           </div>
         }
         actions={
@@ -136,10 +157,9 @@ export default function ClientsList({
         }
       />
       <PageBody>
-
         {erreur ? (
           <LoadError quoi="La liste des clients" />
-        ) : sorted.length === 0 ? (
+        ) : vide ? (
           <EmptyState
             icon={<Users className="h-5 w-5" />}
             title={search ? "Aucun résultat" : "Aucun client"}
@@ -154,38 +174,50 @@ export default function ClientsList({
             }
           />
         ) : (
-          <div className="rounded-xl border bg-card shadow-card overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <SortHeader label="Nom / Prénom" sortKey="name" />
-                  <SortHeader label="Ville" sortKey="city" />
-                  <SortHeader label="Téléphone" sortKey="phone" />
-                  <SortHeader label="Email" sortKey="email" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sorted.map((c, idx) => (
-                  <TableRow
-                    key={c.id}
-                    className={`cursor-pointer ${idx % 2 === 1 ? "bg-primary/10 hover:bg-primary/15" : "hover:bg-accent/40"}`}
-                    onClick={() => setSelectedClientId(c.id)}
-                  >
-                    <TableCell className="font-medium">{c.lastName} {c.firstName}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {c.city ?? <span className="opacity-50">—</span>}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground tabular-nums">
-                      {c.phone ?? <span className="opacity-50">—</span>}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {c.email ?? <span className="opacity-50">—</span>}
-                    </TableCell>
+          <>
+            <div className="rounded-xl border bg-card shadow-card overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <SortHeader label="Nom / Prénom" sortKey="name" />
+                    <SortHeader label="Ville" sortKey="city" />
+                    <SortHeader label="Téléphone" sortKey="phone" />
+                    <SortHeader label="Email" sortKey="email" />
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {items.map((c, idx) => (
+                    <TableRow
+                      key={c.id}
+                      className={`cursor-pointer ${idx % 2 === 1 ? "bg-primary/10 hover:bg-primary/15" : "hover:bg-accent/40"}`}
+                      onClick={() => setSelectedClientId(c.id)}
+                    >
+                      <TableCell className="font-medium">{c.lastName} {c.firstName}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {c.city ?? <span className="opacity-50">—</span>}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground tabular-nums">
+                        {c.phone ?? <span className="opacity-50">—</span>}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {c.email ?? <span className="opacity-50">—</span>}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <Pager
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              onPageChange={setPage}
+              onPageSizeChange={(s) => {
+                setPageSize(s);
+                setPage(1);
+              }}
+            />
+          </>
         )}
       </PageBody>
 
@@ -198,7 +230,10 @@ export default function ClientsList({
         open={newClientOpen}
         onClose={() => setNewClientOpen(false)}
         onSaved={(data) => {
-          setClients((prev) => [data as Client, ...prev]);
+          // En tête de la page courante, sans rechargement : la fiche vient
+          // d'être créée, elle est ce que l'on cherche à voir.
+          setItems((prev) => [data as Client, ...prev]);
+          setTotal((t) => t + 1);
           setNewClientOpen(false);
         }}
       />

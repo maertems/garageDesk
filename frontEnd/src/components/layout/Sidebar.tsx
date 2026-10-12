@@ -54,40 +54,51 @@ const groupeAdministration: NavLink[] = [
 
 const atelierLink: NavLink = { href: "/atelier", label: "Atelier", icon: Wrench, matchPrefix: "/atelier" };
 
+export type SidebarUser = { login: string; role: string };
+
+export const SIDEBAR_COLLAPSED_KEY = "sidebar:collapsed";
+// Émis sur `window` à chaque bascule : `AppShell` ajuste la marge du contenu
+// sans relire le stockage toutes les 300 ms comme avant.
+export const SIDEBAR_COLLAPSED_EVENT = "sidebar:collapsed-change";
+
 export default function Sidebar({
   appName,
   remindersOff = false,
+  user = null,
 }: {
   appName: string;
   remindersOff?: boolean;
+  // Rendu par le serveur avec la page (layout.tsx). La barre le demandait
+  // elle-même à chaque navigation, et les entrées « admin » apparaissaient après
+  // coup.
+  user?: SidebarUser | null;
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [role, setRole] = useState<string | null>(null);
-  const [login, setLogin] = useState<string | null>(null);
+  const role = user?.role ?? null;
+  const login = user?.login ?? null;
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
-    fetch("/api/proxy/auth/me", { credentials: "include" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        setRole(data?.role ?? null);
-        setLogin(data?.login ?? null);
-      })
-      .catch(() => setRole(null));
-  }, []);
-
-  useEffect(() => {
-    const stored = typeof window !== "undefined" ? localStorage.getItem("sidebar:collapsed") : null;
-    if (stored === "1") setCollapsed(true);
+    try {
+      if (localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1") setCollapsed(true);
+    } catch {
+      // stockage indisponible : on reste déplié
+    }
   }, []);
 
   const toggleCollapsed = () => {
     setCollapsed((c) => {
       const v = !c;
-      if (typeof window !== "undefined") localStorage.setItem("sidebar:collapsed", v ? "1" : "0");
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, v ? "1" : "0");
+      } catch {
+        // sans stockage, la bascule vaut pour cette page seulement
+      }
       return v;
     });
+    // Après la mise à jour de l'état, pour que le cadre lise la nouvelle valeur.
+    setTimeout(() => window.dispatchEvent(new Event(SIDEBAR_COLLAPSED_EVENT)), 0);
   };
 
   async function handleLogout() {

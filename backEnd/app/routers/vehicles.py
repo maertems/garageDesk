@@ -1,30 +1,71 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.database import db_cursor
 from app.auth import get_current_user
+from app.schemas.common import PAGE_LIMIT_MAX, PageResponse
 from app.schemas.vehicle import VehicleCreate, VehicleUpdate, VehicleResponse, VehicleListResponse
 
 router = APIRouter(prefix="/vehicles", tags=["vehicles"])
 
-_LIST_QUERY = """
+_LIST_SELECT = """
     SELECT v.id, v.clientId, v.brand, v.model, v.licensePlate, v.vin, v.mileage, v.vmId, v.type, v.registrationDate,
            c.firstName AS clientFirstName, c.lastName AS clientLastName
+"""
+_LIST_FROM = """
     FROM vehicles v
     LEFT JOIN clients c ON v.clientId = c.id
 """
+_LIST_QUERY = _LIST_SELECT + _LIST_FROM
+
+# Ce que la page des véhicules cherchait dans le navigateur, sur la liste
+# complète : plaque, marque, modèle, type, date de mise en circulation sous ses
+# deux écritures. Le nom du propriétaire s'y ajoute, puisqu'il est affiché.
+_SEARCH_WHERE = (
+    "(v.licensePlate LIKE %s OR v.brand LIKE %s OR v.model LIKE %s OR v.type LIKE %s "
+    "OR DATE_FORMAT(v.registrationDate, '%%d/%%m/%%Y') LIKE %s OR v.registrationDate LIKE %s "
+    "OR CONCAT_WS(' ', c.lastName, c.firstName) LIKE %s OR CONCAT_WS(' ', c.firstName, c.lastName) LIKE %s)"
+)
+_SEARCH_PARAMS = 8
 
 
-@router.get("", response_model=list[VehicleListResponse])
+@router.get(
+    "",
+    response_model=list[VehicleListResponse] | PageResponse[VehicleListResponse],
+    description=(
+        "List vehicles, optionally those of one client. Use search to filter "
+        "(plate, brand, model, type, registration date, owner). With limit (and offset), "
+        "returns a page: {items, total}."
+    ),
+)
 def list_vehicles(
     current_user: dict = Depends(get_current_user),
     client_id: int | None = Query(None, alias="clientId"),
+    search: str | None = Query(None),
+    limit: int | None = Query(None, ge=1, le=PAGE_LIMIT_MAX, description="Page size; enables the paged response"),
+    offset: int = Query(0, ge=0),
 ):
+    conditions: list[str] = []
+    params: list = []
+    if client_id is not None:
+        conditions.append("v.clientId = %s")
+        params.append(client_id)
+    if search:
+        conditions.append(_SEARCH_WHERE)
+        params.extend([f"%{search}%"] * _SEARCH_PARAMS)
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    order_by = "ORDER BY v.licensePlate" if client_id is not None else "ORDER BY v.clientId, v.licensePlate"
+    total = None
     with db_cursor() as cur:
-        if client_id is not None:
-            cur.execute(_LIST_QUERY + " WHERE v.clientId = %s ORDER BY v.licensePlate", (client_id,))
+        if limit is not None:
+            cur.execute(f"SELECT COUNT(*) AS n {_LIST_FROM} {where}", params)
+            total = cur.fetchone()["n"]
+            cur.execute(f"{_LIST_QUERY} {where} {order_by} LIMIT %s OFFSET %s", params + [limit, offset])
         else:
-            cur.execute(_LIST_QUERY + " ORDER BY v.clientId, v.licensePlate")
+            cur.execute(f"{_LIST_QUERY} {where} {order_by}", params)
         rows = cur.fetchall()
-    return [VehicleListResponse(**r) for r in rows]
+    items = [VehicleListResponse(**r) for r in rows]
+    if total is None:
+        return items
+    return PageResponse(items=items, total=total)
 
 
 @router.get("/{vehicle_id}", response_model=VehicleResponse)

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Generic, Optional, TypeVar
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict
 
@@ -83,3 +83,25 @@ class CamelModel(BaseModel):
         alias_generator=to_camel,
         from_attributes=True,
     )
+
+
+T = TypeVar("T")
+
+
+class PageResponse(CamelModel, Generic[T]):
+    """Une page d'une liste paginée côté serveur.
+
+    Les listes (clients, véhicules, documents) rendaient leur table ENTIÈRE —
+    5 125 documents et 1,5 Mo pour en afficher vingt. Quand l'appelant passe
+    `limit`, il reçoit cette enveloppe : la page demandée et le nombre total de
+    lignes qui répondent au filtre, pour le compteur et la pagination. Sans
+    `limit`, la réponse reste la liste nue qu'attendent les autres appelants.
+    """
+
+    items: list[T]
+    total: int
+
+
+# Borne haute d'une page : au-delà, on retombe sur le téléchargement complet
+# qu'on cherche justement à éviter.
+PAGE_LIMIT_MAX = 200

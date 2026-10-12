@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { apiJson, verifierSession } from "@/lib/api";
-import DocumentsList from "./DocumentsList";
+import DocumentsList, { apiQuery, lireQuery } from "./DocumentsList";
 
 export type BillListItem = {
   id: number;
@@ -20,16 +20,36 @@ export type BillListItem = {
   clientLastName: string | null;
 };
 
-export default async function DocumentsPage() {
+/** Une page de documents, avec les deux totaux que l'en-tête affiche. */
+export type BillPage = {
+  items: BillListItem[];
+  total: number;
+  totalAll: number;
+  hiddenCount: number;
+};
+
+const PAGE_VIDE: BillPage = { items: [], total: 0, totalAll: 0, hiddenCount: 0 };
+
+export default async function DocumentsPage({
+  searchParams,
+}: {
+  searchParams?: Record<string, string | string[] | undefined>;
+}) {
   const cookieStore = await cookies();
   const cookie = cookieStore.toString();
   // Session lancée sans être attendue : les appels de données partent en même
   // temps, et la redirection est décidée après eux (cf. verifierSession).
   const session = verifierSession(cookie);
-  let bills: BillListItem[] = [];
+  // La page demandée, et elle seule — les mêmes paramètres que la liste met dans
+  // l'URL. La liste entière (5 125 documents, 1,5 Mo) ne part plus.
+  const query = lireQuery((k) => {
+    const v = searchParams?.[k];
+    return Array.isArray(v) ? v[0] ?? null : v ?? null;
+  });
+  let page = PAGE_VIDE;
   try {
-    const data = await apiJson<BillListItem[]>("/api/v1/bills", cookie);
-    bills = Array.isArray(data) ? data : [];
+    const data = await apiJson<BillPage>(`/api/v1/bills?${apiQuery(query)}`, cookie);
+    if (data && Array.isArray(data.items)) page = data;
   } catch {
     //
   }
@@ -37,7 +57,7 @@ export default async function DocumentsPage() {
 
   return (
     <Suspense>
-      <DocumentsList initialBills={bills} />
+      <DocumentsList initialPage={page} />
     </Suspense>
   );
 }
