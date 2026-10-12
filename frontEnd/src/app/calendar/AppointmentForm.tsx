@@ -264,6 +264,15 @@ export default function AppointmentForm({
     if (categories.length && !categoryId) setCategoryId(getDefaultCategoryId(categories));
   }, [categories, categoryId]);
 
+  // Même garde-fou pour le statut. Une note est enregistrée sans statut ni
+  // catégorie ; en la repassant en rendez-vous client, la catégorie reprenait sa
+  // valeur par défaut grâce à l'effet ci-dessus, mais le statut restait vide
+  // alors que le menu déroulant AFFICHAIT sa première entrée — l'enregistrement
+  // refusait alors un choix que l'utilisateur voyait pourtant fait.
+  useEffect(() => {
+    if (statuses.length && !statusId) setStatusId(statuses[0].id);
+  }, [statuses, statusId]);
+
   // Fiche complète du client du RDV, demandée dès le montage.
   useEffect(() => {
     if (seed?.clientId) loadClient(seed.clientId);
