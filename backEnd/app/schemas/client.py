@@ -1,5 +1,6 @@
 from app.schemas.common import CamelModel
 from app.schemas.vehicle import VehicleResponse
+from datetime import datetime
 from typing import Optional
 
 
@@ -49,6 +50,9 @@ class ClientUpdate(CamelModel):
 
 class ClientResponse(ClientBase):
     id: int
+    # Date d'enregistrement, pour la liste des clients (derniers enregistrés en
+    # tête). Optionnelle : les réponses construites sans relire la ligne n'en ont pas.
+    createdAt: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 

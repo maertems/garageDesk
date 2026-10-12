@@ -29,9 +29,10 @@ export type Client = {
   city?: string;
   postalCode?: string;
   clientType: string;
+  createdAt?: string;
 };
 
-type SortKey = "name" | "city" | "phone" | "email";
+type SortKey = "name" | "city" | "phone" | "email" | "created";
 // Colonne de tri de l'écran → colonne de l'API. « Nom / Prénom » trie sur le nom,
 // l'API ajoute le prénom en second critère.
 const SORT_COLUMN: Record<SortKey, string> = {
@@ -39,7 +40,22 @@ const SORT_COLUMN: Record<SortKey, string> = {
   city: "city",
   phone: "phone",
   email: "email",
+  created: "createdAt",
 };
+// Ordre pris quand on clique une colonne pour la première fois : une date se lit
+// du plus récent au plus ancien, un texte de A à Z.
+const FIRST_ORDER: Record<SortKey, "asc" | "desc"> = {
+  name: "asc",
+  city: "asc",
+  phone: "asc",
+  email: "asc",
+  created: "desc",
+};
+
+function formatDate(d?: string | null): string {
+  if (!d) return "";
+  return new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
 
 export const CLIENTS_PAGE_SIZE = 50;
 
@@ -68,8 +84,9 @@ export default function ClientsList({
   const [items, setItems] = useState<Client[]>(initialPage.items);
   const [total, setTotal] = useState(initialPage.total);
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<SortKey>("name");
-  const [order, setOrder] = useState<"asc" | "desc">("asc");
+  // Derniers enregistrés en tête ; un clic sur « Nom / Prénom » donne l'alphabet.
+  const [sortBy, setSortBy] = useState<SortKey>("created");
+  const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(CLIENTS_PAGE_SIZE);
   const [loading, setLoading] = useState(false);
@@ -110,7 +127,7 @@ export default function ClientsList({
     if (sortBy === key) setOrder((o) => (o === "asc" ? "desc" : "asc"));
     else {
       setSortBy(key);
-      setOrder("asc");
+      setOrder(FIRST_ORDER[key]);
     }
     setPage(1);
   }
@@ -183,6 +200,7 @@ export default function ClientsList({
                     <SortHeader label="Ville" sortKey="city" />
                     <SortHeader label="Téléphone" sortKey="phone" />
                     <SortHeader label="Email" sortKey="email" />
+                    <SortHeader label="Enregistré le" sortKey="created" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -201,6 +219,9 @@ export default function ClientsList({
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {c.email ?? <span className="opacity-50">—</span>}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground tabular-nums whitespace-nowrap">
+                        {formatDate(c.createdAt) || <span className="opacity-50">—</span>}
                       </TableCell>
                     </TableRow>
                   ))}

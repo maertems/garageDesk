@@ -17,7 +17,7 @@ export default async function ClientsPage() {
   let erreur = false;
   try {
     const data = await apiJson<Page<Client>>(
-      `/api/v1/clients?sortBy=lastName&order=asc&limit=${CLIENTS_PAGE_SIZE}&offset=0`,
+      `/api/v1/clients?sortBy=createdAt&order=desc&limit=${CLIENTS_PAGE_SIZE}&offset=0`,
       cookie
     );
     if (data && Array.isArray(data.items)) page = data;

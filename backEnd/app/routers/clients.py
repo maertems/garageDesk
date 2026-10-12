@@ -9,8 +9,8 @@ from app.services.client_account_service import prochain_numero_de_compte
 router = APIRouter(prefix="/clients", tags=["clients"])
 
 _COLUMNS = ("id, gender, firstName, lastName, phone, email, address, postalCode, city, "
-            "clientType, vatNumber, siren, accountNumber, vmId")
-_VALID_SORT = {"lastName", "firstName", "city", "postalCode", "phone", "email"}
+            "clientType, vatNumber, siren, accountNumber, vmId, createdAt")
+_VALID_SORT = {"lastName", "firstName", "city", "postalCode", "phone", "email", "createdAt"}
 
 # « jean dupont » comme « dupont jean » doivent trouver la fiche : la page des
 # clients filtrait ainsi dans le navigateur, sur la liste complète. Les deux
@@ -39,7 +39,7 @@ _SEARCH_PARAMS = 8
 def list_clients(
     current_user: dict = Depends(get_current_user),
     search: str | None = Query(None, description="Search in lastName, firstName, city, postalCode, phone, email"),
-    sort_by: str | None = Query("lastName", alias="sortBy", description="Sort column: lastName, firstName, city, postalCode, phone, email"),
+    sort_by: str | None = Query("lastName", alias="sortBy", description="Sort column: lastName, firstName, city, postalCode, phone, email, createdAt"),
     order: str = Query("asc", description="Sort order: asc or desc"),
     with_vehicles: bool = Query(False, alias="withVehicles"),
     limit: int | None = Query(None, ge=1, le=PAGE_LIMIT_MAX, description="Page size; enables the paged response"),
@@ -53,7 +53,11 @@ def list_clients(
         q = f"%{search}%"
         where = f"WHERE {_SEARCH_WHERE}"
         params = [q] * _SEARCH_PARAMS
-    order_by = f"ORDER BY {sort_col} {order_dir}, lastName, firstName"
+    # Tri par date de création : les fiches importées d'un coup partagent le même
+    # instant, l'identifiant les départage dans le même sens. Sinon, nom et prénom
+    # en second critère.
+    tie = f"id {order_dir}" if sort_col == "createdAt" else "lastName, firstName"
+    order_by = f"ORDER BY {sort_col} {order_dir}, {tie}"
     total = None
     with db_cursor() as cur:
         if limit is not None:
