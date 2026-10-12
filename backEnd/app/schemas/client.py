@@ -1,7 +1,10 @@
 from app.schemas.common import CamelModel
 from app.schemas.vehicle import VehicleResponse
+import re
 from datetime import datetime
 from typing import Optional
+
+from pydantic import field_validator
 
 
 class ClientBase(CamelModel):
@@ -29,11 +32,54 @@ class ClientBase(CamelModel):
     vmId: Optional[int] = None
 
 
-class ClientCreate(ClientBase):
+def _espaces(valeur: str) -> str:
+    return re.sub(r"\s+", " ", valeur).strip()
+
+
+def nom_en_majuscules(valeur: Optional[str]) -> Optional[str]:
+    """« dupont » → « DUPONT ». Vide ou absent : inchangé."""
+    if not valeur or not valeur.strip():
+        return valeur
+    return _espaces(valeur).upper()
+
+
+def prenom_capitalise(valeur: Optional[str]) -> Optional[str]:
+    """« jEAN-pierre marie » → « Jean-Pierre Marie ».
+
+    Tout en minuscules, puis une majuscule au début de chaque partie : les parties
+    sont séparées par une espace ou un tiret, pour les prénoms composés. Vide ou
+    absent : inchangé.
+    """
+    if not valeur or not valeur.strip():
+        return valeur
+    minuscule = _espaces(valeur).lower()
+    return re.sub(r"(^|[ -])([^ -])", lambda m: m.group(1) + m.group(2).upper(), minuscule)
+
+
+class _NomsNormalises:
+    """Nom en majuscules, prénom capitalisé, à l'ÉCRITURE seulement.
+
+    Posé sur les schémas de création et de modification, pas sur la réponse : les
+    fiches déjà en base sont rendues telles quelles. La règle vaut pour tout appel
+    de l'API, donc pour tous les formulaires qui créent un client.
+    """
+
+    @field_validator("lastName", mode="after", check_fields=False)
+    @classmethod
+    def _last_name(cls, v):
+        return nom_en_majuscules(v)
+
+    @field_validator("firstName", mode="after", check_fields=False)
+    @classmethod
+    def _first_name(cls, v):
+        return prenom_capitalise(v)
+
+
+class ClientCreate(_NomsNormalises, ClientBase):
     pass
 
 
-class ClientUpdate(CamelModel):
+class ClientUpdate(_NomsNormalises, CamelModel):
     gender: Optional[str] = None
     firstName: Optional[str] = None
     lastName: Optional[str] = None
