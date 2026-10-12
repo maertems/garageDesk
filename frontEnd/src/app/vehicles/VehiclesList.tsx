@@ -17,6 +17,7 @@ import { LoadError } from "@/components/ui/load-error";
 import { Pager, type Page } from "@/components/ui/pager";
 import { PageHeader, PageBody } from "@/components/layout/PageHeader";
 import { useDebouncedEffect } from "@/lib/use-debounced-effect";
+import { VEHICLES_PAGE_SIZE } from "./pagination";
 import VehicleModal from "./VehicleModal";
 import VehicleFormModal from "./VehicleFormModal";
 
@@ -32,7 +33,6 @@ export type Vehicle = {
   clientLastName?: string | null;
 };
 
-export const VEHICLES_PAGE_SIZE = 50;
 
 function formatDate(d: string | null | undefined): string {
   if (!d) return "";

@@ -2,7 +2,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { apiJson, verifierSession } from "@/lib/api";
 import type { Page } from "@/components/ui/pager";
-import ClientsList, { CLIENTS_PAGE_SIZE, type Client } from "./ClientsList";
+import ClientsList, { type Client } from "./ClientsList";
+import { CLIENTS_PAGE_SIZE } from "./pagination";
 
 export default async function ClientsPage() {
   const cookieStore = await cookies();

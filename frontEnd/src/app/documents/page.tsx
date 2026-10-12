@@ -2,7 +2,8 @@ import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { apiJson, verifierSession } from "@/lib/api";
-import DocumentsList, { apiQuery, lireQuery } from "./DocumentsList";
+import DocumentsList from "./DocumentsList";
+import { apiQuery, lireQuery } from "./query";
 
 export type BillListItem = {
   id: number;

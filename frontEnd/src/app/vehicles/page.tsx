@@ -2,7 +2,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { apiJson, verifierSession } from "@/lib/api";
 import type { Page } from "@/components/ui/pager";
-import VehiclesList, { VEHICLES_PAGE_SIZE, type Vehicle } from "./VehiclesList";
+import VehiclesList, { type Vehicle } from "./VehiclesList";
+import { VEHICLES_PAGE_SIZE } from "./pagination";
 
 /**
  * La première page est rendue par le serveur, comme celle des clients, et

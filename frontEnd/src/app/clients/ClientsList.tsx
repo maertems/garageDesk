@@ -17,6 +17,7 @@ import { LoadError } from "@/components/ui/load-error";
 import { Pager, type Page } from "@/components/ui/pager";
 import { PageHeader, PageBody } from "@/components/layout/PageHeader";
 import { useDebouncedEffect } from "@/lib/use-debounced-effect";
+import { CLIENTS_PAGE_SIZE } from "./pagination";
 import ClientModal from "./ClientModal";
 import ClientFormModal from "./ClientFormModal";
 
@@ -57,7 +58,6 @@ function formatDate(d?: string | null): string {
   return new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
-export const CLIENTS_PAGE_SIZE = 50;
 
 function SortIcon({ active, order }: { active: boolean; order: "asc" | "desc" }) {
   if (!active) return <ArrowUpDown className="h-3.5 w-3.5 opacity-40" />;
