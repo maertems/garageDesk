@@ -274,14 +274,14 @@ function DraggableAptBlock({
   const blockHeight = heightPx - 2;
   const showSingleLineOnly = blockHeight < 30;
   const isNote = apt.appointmentType === "note";
-  // Lignes de commentaire qui tiennent sous le titre d'une note : hauteur du
-  // bloc moins le rembourrage vertical (2 × 2 px) et la ligne de titre, le tout
-  // en lignes de `fontSize × lineHeight`. Mesuré : sans cette borne, le
-  // commentaire écrasait le titre (flex) et la dernière ligne était coupée en
-  // son milieu.
+  // Lignes de commentaire qui tiennent dans le bloc d'une note : sa hauteur
+  // moins le rembourrage vertical (2 × 2 px), en lignes de `fontSize ×
+  // lineHeight`. Mesuré : sans cette borne, la dernière ligne était coupée en
+  // son milieu. Pas de titre « Note » : il prenait une ligne au vrai texte.
   const fontPx = totalColumns > 3 ? 11.2 : 12;
   const linePx = fontPx * 1.25;
-  const commentLines = Math.max(1, Math.floor((blockHeight - 4 - linePx) / linePx));
+  const commentLines = Math.max(1, Math.floor((blockHeight - 4) / linePx));
+  const noteText = isNote ? apt.comment?.trim() || "Note" : "";
 
   return (
     <div
@@ -311,24 +311,19 @@ function DraggableAptBlock({
         touchAction: "none",
       }}
     >
-      <span className="overflow-hidden text-ellipsis whitespace-nowrap font-medium w-full shrink-0">
-        {isNote
-          ? // Un bloc d'une seule ligne : le début du commentaire suit le titre,
-            // sinon le bloc ne dirait que « Note ».
-            showSingleLineOnly && apt.comment?.trim()
-            ? `Note · ${apt.comment.trim()}`
-            : "Note"
-          : `${apt.clientLastName ?? ""} / ${apt.vehicleLicensePlate ?? ""}`}
-      </span>
-      {/* Note : le commentaire sous le titre, sur autant de lignes que le bloc en
-          laisse — il est coupé par le bloc lui-même (overflow-hidden), l'infobulle
-          le donne en entier. */}
-      {isNote && !showSingleLineOnly && apt.comment?.trim() && (
+      {/* Note : le commentaire seul, dès la première ligne, sur autant de lignes
+          que le bloc en laisse ; l'infobulle le donne en entier. « Note » n'est
+          affiché que si le commentaire est vide. */}
+      {isNote ? (
         <span
-          className="overflow-hidden whitespace-pre-line break-words w-full opacity-90"
+          className="overflow-hidden whitespace-pre-line break-words w-full font-medium"
           style={{ display: "-webkit-box", WebkitLineClamp: commentLines, WebkitBoxOrient: "vertical" }}
         >
-          {apt.comment.trim()}
+          {noteText}
+        </span>
+      ) : (
+        <span className="overflow-hidden text-ellipsis whitespace-nowrap font-medium w-full shrink-0">
+          {`${apt.clientLastName ?? ""} / ${apt.vehicleLicensePlate ?? ""}`}
         </span>
       )}
       {!isNote && !showSingleLineOnly && apt.prestation?.trim() && (
