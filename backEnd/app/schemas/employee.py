@@ -1,4 +1,4 @@
-from app.schemas.common import CamelModel
+from app.schemas.common import CamelModel, NomsNormalises
 
 
 class EmployeeBase(CamelModel):
@@ -7,11 +7,12 @@ class EmployeeBase(CamelModel):
     category: str  # mechanic, bodywork, office, director
 
 
-class EmployeeCreate(EmployeeBase):
+# Nom en majuscules, prénom capitalisé : même règle que les clients (§ 103).
+class EmployeeCreate(NomsNormalises, EmployeeBase):
     pass
 
 
-class EmployeeUpdate(CamelModel):
+class EmployeeUpdate(NomsNormalises, CamelModel):
     firstName: str | None = None
     lastName: str | None = None
     category: str | None = None

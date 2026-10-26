@@ -1,6 +1,5 @@
-from app.schemas.common import CamelModel, telephone_normalise, texte_en_majuscules
+from app.schemas.common import CamelModel, NomsNormalises, telephone_normalise, texte_en_majuscules
 from app.schemas.vehicle import VehicleResponse
-import re
 from datetime import datetime
 from typing import Optional
 
@@ -32,66 +31,25 @@ class ClientBase(CamelModel):
     vmId: Optional[int] = None
 
 
-def _espaces(valeur: str) -> str:
-    return re.sub(r"\s+", " ", valeur).strip()
+class _ClientNormalise(NomsNormalises):
+    """Règles propres aux clients, en plus des noms : téléphone (§ 101) et ville (§ 102)."""
 
-
-def nom_en_majuscules(valeur: Optional[str]) -> Optional[str]:
-    """« dupont » → « DUPONT ». Vide ou absent : inchangé."""
-    if not valeur or not valeur.strip():
-        return valeur
-    return _espaces(valeur).upper()
-
-
-def prenom_capitalise(valeur: Optional[str]) -> Optional[str]:
-    """« jEAN-pierre marie » → « Jean-Pierre Marie ».
-
-    Tout en minuscules, puis une majuscule au début de chaque partie : les parties
-    sont séparées par une espace ou un tiret, pour les prénoms composés. Vide ou
-    absent : inchangé.
-    """
-    if not valeur or not valeur.strip():
-        return valeur
-    minuscule = _espaces(valeur).lower()
-    return re.sub(r"(^|[ -])([^ -])", lambda m: m.group(1) + m.group(2).upper(), minuscule)
-
-
-class _NomsNormalises:
-    """Nom en majuscules, prénom capitalisé, à l'ÉCRITURE seulement.
-
-    Posé sur les schémas de création et de modification, pas sur la réponse : les
-    fiches déjà en base sont rendues telles quelles. La règle vaut pour tout appel
-    de l'API, donc pour tous les formulaires qui créent un client.
-    """
-
-    @field_validator("lastName", mode="after", check_fields=False)
-    @classmethod
-    def _last_name(cls, v):
-        return nom_en_majuscules(v)
-
-    @field_validator("firstName", mode="after", check_fields=False)
-    @classmethod
-    def _first_name(cls, v):
-        return prenom_capitalise(v)
-
-    # Téléphone collé, chiffres et « + » initial seulement (§ 101).
     @field_validator("phone", mode="after", check_fields=False)
     @classmethod
     def _phone(cls, v):
         return telephone_normalise(v)
 
-    # Ville en majuscules, comme le nom (§ 102).
     @field_validator("city", mode="after", check_fields=False)
     @classmethod
     def _city(cls, v):
         return texte_en_majuscules(v)
 
 
-class ClientCreate(_NomsNormalises, ClientBase):
+class ClientCreate(_ClientNormalise, ClientBase):
     pass
 
 
-class ClientUpdate(_NomsNormalises, CamelModel):
+class ClientUpdate(_ClientNormalise, CamelModel):
     gender: Optional[str] = None
     firstName: Optional[str] = None
     lastName: Optional[str] = None

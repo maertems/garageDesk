@@ -1,7 +1,8 @@
 """Normalisation des noms à l'écriture d'un client — sans base de données."""
 import pytest
 
-from app.schemas.client import ClientCreate, ClientResponse, ClientUpdate, nom_en_majuscules, prenom_capitalise
+from app.schemas.client import ClientCreate, ClientResponse, ClientUpdate
+from app.schemas.common import nom_en_majuscules, prenom_capitalise
 
 
 @pytest.mark.parametrize(
