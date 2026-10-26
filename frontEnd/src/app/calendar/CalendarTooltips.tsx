@@ -27,6 +27,7 @@ export type AppointmentTooltipData = {
   vehicleType?: string | null;
   vehicleLicensePlate?: string;
   prestation?: string | null;
+  comment?: string | null;
   loanVehicleUniqueNumber?: string | null;
   loanVehicleBrand?: string | null;
   loanVehicleModel?: string | null;
@@ -132,6 +133,14 @@ export function AppointmentTooltipBody({ apt }: { apt: AppointmentTooltipData })
       </div>
       {!isNote && (vehicle || apt.vehicleLicensePlate) && (
         <div className="text-muted-foreground">{vehicle || apt.vehicleLicensePlate}</div>
+      )}
+      {/* Note : son commentaire en entier, replié sur une largeur de lecture —
+          le conteneur est en `whitespace-nowrap`, ce bloc reprend ses retours à
+          la ligne et coupe les mots trop longs. */}
+      {isNote && apt.comment?.trim() && (
+        <div className="text-muted-foreground whitespace-pre-line break-words max-w-[22rem]">
+          {apt.comment.trim()}
+        </div>
       )}
       {/* Intervention : ce que l'on vient faire, l'information la plus utile au
           survol et la seule qui manquait. */}

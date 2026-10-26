@@ -274,6 +274,14 @@ function DraggableAptBlock({
   const blockHeight = heightPx - 2;
   const showSingleLineOnly = blockHeight < 30;
   const isNote = apt.appointmentType === "note";
+  // Lignes de commentaire qui tiennent sous le titre d'une note : hauteur du
+  // bloc moins le rembourrage vertical (2 × 2 px) et la ligne de titre, le tout
+  // en lignes de `fontSize × lineHeight`. Mesuré : sans cette borne, le
+  // commentaire écrasait le titre (flex) et la dernière ligne était coupée en
+  // son milieu.
+  const fontPx = totalColumns > 3 ? 11.2 : 12;
+  const linePx = fontPx * 1.25;
+  const commentLines = Math.max(1, Math.floor((blockHeight - 4 - linePx) / linePx));
 
   return (
     <div
@@ -303,10 +311,27 @@ function DraggableAptBlock({
         touchAction: "none",
       }}
     >
-      <span className="overflow-hidden text-ellipsis whitespace-nowrap font-medium w-full">
-        {isNote ? "Note" : `${apt.clientLastName ?? ""} / ${apt.vehicleLicensePlate ?? ""}`}
+      <span className="overflow-hidden text-ellipsis whitespace-nowrap font-medium w-full shrink-0">
+        {isNote
+          ? // Un bloc d'une seule ligne : le début du commentaire suit le titre,
+            // sinon le bloc ne dirait que « Note ».
+            showSingleLineOnly && apt.comment?.trim()
+            ? `Note · ${apt.comment.trim()}`
+            : "Note"
+          : `${apt.clientLastName ?? ""} / ${apt.vehicleLicensePlate ?? ""}`}
       </span>
-      {!showSingleLineOnly && apt.prestation?.trim() && (
+      {/* Note : le commentaire sous le titre, sur autant de lignes que le bloc en
+          laisse — il est coupé par le bloc lui-même (overflow-hidden), l'infobulle
+          le donne en entier. */}
+      {isNote && !showSingleLineOnly && apt.comment?.trim() && (
+        <span
+          className="overflow-hidden whitespace-pre-line break-words w-full opacity-90"
+          style={{ display: "-webkit-box", WebkitLineClamp: commentLines, WebkitBoxOrient: "vertical" }}
+        >
+          {apt.comment.trim()}
+        </span>
+      )}
+      {!isNote && !showSingleLineOnly && apt.prestation?.trim() && (
         <span className="overflow-hidden text-ellipsis whitespace-nowrap w-full opacity-90">
           {apt.prestation}
         </span>
@@ -990,9 +1015,9 @@ export default function CalendarView({
                           ? "Note"
                           : `${apt.clientLastName ?? ""} / ${apt.vehicleLicensePlate ?? ""}`}
                       </span>
-                      {apt.prestation?.trim() && (
+                      {(apt.appointmentType === "note" ? apt.comment : apt.prestation)?.trim() && (
                         <span className="text-sm text-muted-foreground truncate">
-                          — {apt.prestation}
+                          — {(apt.appointmentType === "note" ? apt.comment : apt.prestation)!.trim()}
                         </span>
                       )}
                     </div>
@@ -1090,9 +1115,14 @@ export default function CalendarView({
                 ? "Note"
                 : `${activeDrag.apt.clientLastName ?? ""} / ${activeDrag.apt.vehicleLicensePlate ?? ""}`}
             </span>
-            {activeDrag.apt.prestation?.trim() && (
+            {(activeDrag.apt.appointmentType === "note"
+              ? activeDrag.apt.comment
+              : activeDrag.apt.prestation
+            )?.trim() && (
               <span className="overflow-hidden text-ellipsis whitespace-nowrap w-full opacity-90">
-                {activeDrag.apt.prestation}
+                {activeDrag.apt.appointmentType === "note"
+                  ? activeDrag.apt.comment
+                  : activeDrag.apt.prestation}
               </span>
             )}
           </div>

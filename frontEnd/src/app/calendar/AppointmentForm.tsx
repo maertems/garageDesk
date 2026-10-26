@@ -88,6 +88,10 @@ export type AppointmentSeed = {
 };
 
 const APPOINTMENT_TYPES = ["client", "note"] as const;
+// Le commentaire d'une note est affiché dans le cartouche du calendrier et en
+// entier dans son infobulle : au-delà, il ne se lirait plus. La colonne est un
+// TEXT, la limite est celle de l'écran, pas de la base.
+const COMMENT_MAX_LENGTH = 255;
 const APPOINTMENT_TYPE_LABELS: Record<string, string> = {
   client: "Client",
   note: "Note",
@@ -897,10 +901,18 @@ export default function AppointmentForm({
                 <Textarea
                   id="comment"
                   value={comment}
-                  onChange={(e) => setComment(e.target.value)}
+                  onChange={(e) => setComment(e.target.value.slice(0, COMMENT_MAX_LENGTH))}
                   rows={3}
-                  placeholder="Commentaire interne..."
+                  maxLength={COMMENT_MAX_LENGTH}
+                  placeholder={
+                    appointmentType === "note"
+                      ? "Texte de la note, affiché dans le calendrier..."
+                      : "Commentaire interne..."
+                  }
                 />
+                <div className="text-right text-xs text-muted-foreground tabular-nums">
+                  {comment.length} / {COMMENT_MAX_LENGTH}
+                </div>
                 {appointmentType === "client" && (
                   <div className="flex items-center justify-between rounded-md border bg-secondary/30 px-3 py-2">
                     <span className="text-sm font-medium">Notification du client</span>
