@@ -1,4 +1,4 @@
-from app.schemas.common import CamelModel, telephone_normalise
+from app.schemas.common import CamelModel, telephone_normalise, texte_en_majuscules
 from app.schemas.vehicle import VehicleResponse
 import re
 from datetime import datetime
@@ -79,6 +79,12 @@ class _NomsNormalises:
     @classmethod
     def _phone(cls, v):
         return telephone_normalise(v)
+
+    # Ville en majuscules, comme le nom (§ 102).
+    @field_validator("city", mode="after", check_fields=False)
+    @classmethod
+    def _city(cls, v):
+        return texte_en_majuscules(v)
 
 
 class ClientCreate(_NomsNormalises, ClientBase):

@@ -39,7 +39,7 @@ def test_telephone_refuse(brut):
 def test_creation_et_modification():
     assert ClientCreate(lastName="Dupont", phone="06.34.34.34.34").phone == "0634343434"
     assert ClientUpdate(phone="+32 475 12 34 56").model_dump(exclude_unset=True) == {"phone": "+32475123456"}
-    assert ClientUpdate(city="Lille").model_dump(exclude_unset=True) == {"city": "Lille"}
+    assert ClientUpdate(postalCode="59000").model_dump(exclude_unset=True) == {"postalCode": "59000"}
 
 
 def test_lecture_inchangee():
