@@ -1,7 +1,8 @@
+import re
 from datetime import datetime
 from typing import Annotated, Any, Generic, Optional, TypeVar
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict
+from pydantic import BaseModel, BeforeValidator, ConfigDict, field_validator
 
 
 # ── Types tolérants ──────────────────────────────────────────────────────────
@@ -83,6 +84,31 @@ class CamelModel(BaseModel):
         alias_generator=to_camel,
         from_attributes=True,
     )
+
+
+def plaque_en_majuscules(valeur: Optional[str]) -> Optional[str]:
+    """« ab-123-cd » → « AB-123-CD » : espaces resserrées, lettres en majuscules.
+
+    Les séparateurs sont laissés tels quels (tiret ou espace) : seule la casse
+    est imposée. Vide ou absent : inchangé.
+    """
+    if not valeur or not valeur.strip():
+        return valeur
+    return re.sub(r"\s+", " ", valeur).strip().upper()
+
+
+class PlaqueNormalisee:
+    """Plaque d'immatriculation en majuscules, à l'ÉCRITURE seulement.
+
+    À poser sur les schémas de création et de modification qui portent
+    `licensePlate` (véhicules des clients, véhicules de prêt), pas sur les
+    réponses : les lignes déjà en base sont rendues telles quelles.
+    """
+
+    @field_validator("licensePlate", mode="after", check_fields=False)
+    @classmethod
+    def _license_plate(cls, v):
+        return plaque_en_majuscules(v)
 
 
 T = TypeVar("T")

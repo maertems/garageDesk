@@ -1,4 +1,4 @@
-from app.schemas.common import CamelModel
+from app.schemas.common import CamelModel, PlaqueNormalisee
 from typing import Optional
 
 
@@ -12,11 +12,11 @@ class LoanVehicleBase(CamelModel):
     active: bool = True
 
 
-class LoanVehicleCreate(LoanVehicleBase):
+class LoanVehicleCreate(PlaqueNormalisee, LoanVehicleBase):
     pass
 
 
-class LoanVehicleUpdate(CamelModel):
+class LoanVehicleUpdate(PlaqueNormalisee, CamelModel):
     brand: Optional[str] = None
     model: Optional[str] = None
     licensePlate: Optional[str] = None

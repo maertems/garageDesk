@@ -1,4 +1,4 @@
-from app.schemas.common import CamelModel
+from app.schemas.common import CamelModel, PlaqueNormalisee
 from typing import Optional
 from datetime import date
 
@@ -15,11 +15,11 @@ class VehicleBase(CamelModel):
     registrationDate: Optional[date] = None  # 1ère mise en circulation
 
 
-class VehicleCreate(VehicleBase):
+class VehicleCreate(PlaqueNormalisee, VehicleBase):
     pass
 
 
-class VehicleUpdate(CamelModel):
+class VehicleUpdate(PlaqueNormalisee, CamelModel):
     brand: Optional[str] = None
     model: Optional[str] = None
     licensePlate: Optional[str] = None
