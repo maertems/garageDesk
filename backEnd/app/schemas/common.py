@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Annotated, Any, Generic, Optional, TypeVar
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, field_validator
+from pydantic_core import PydanticCustomError
 
 
 # ── Types tolérants ──────────────────────────────────────────────────────────
@@ -86,19 +87,48 @@ class CamelModel(BaseModel):
     )
 
 
-def plaque_en_majuscules(valeur: Optional[str]) -> Optional[str]:
-    """« ab-123-cd » → « AB-123-CD » : espaces resserrées, lettres en majuscules.
+# Seuls lettres, chiffres, tiret et espace sont admis dans une plaque.
+_PLAQUE_AUTORISEE = re.compile(r"^[A-Za-z0-9\-\s]+$")
+# Format SIV (depuis 2009), séparateurs retirés : AB123CD → AB-123-CD.
+_PLAQUE_SIV = re.compile(r"^([A-Z]{2})(\d{3})([A-Z]{2})$")
+# Ancien format FNI, séparateurs retirés : 12AZE59 → 12 AZE 59.
+_PLAQUE_FNI = re.compile(r"^(\d{1,4})([A-Z]{1,3})(\d{2,3})$")
 
-    Les séparateurs sont laissés tels quels (tiret ou espace) : seule la casse
-    est imposée. Vide ou absent : inchangé.
+PLAQUE_MESSAGE = "Plaque d'immatriculation : seuls les lettres, les chiffres, le tiret et l'espace sont acceptés."
+
+
+def plaque_normalisee(valeur: Optional[str]) -> Optional[str]:
+    """Plaque en majuscules, au format officiel quand il est reconnu.
+
+    - « ab123cd », « AB 123 CD », « ab-123-cd » → « AB-123-CD » (SIV, tirets) ;
+    - « 12aze59 », « 12 AZE 59 » → « 12 AZE 59 » (FNI, espaces) ;
+    - autre chose (plaque étrangère, garage…) : espaces resserrées, majuscules ;
+    - un caractère hors lettres, chiffres, tiret, espace : refusé (422) ;
+    - vide ou absent : inchangé.
     """
+    if not valeur or not valeur.strip():
+        return valeur
+    if not _PLAQUE_AUTORISEE.match(valeur):
+        raise PydanticCustomError("license_plate", PLAQUE_MESSAGE)
+    compact = re.sub(r"[\s-]", "", valeur).upper()
+    m = _PLAQUE_SIV.match(compact)
+    if m:
+        return "-".join(m.groups())
+    m = _PLAQUE_FNI.match(compact)
+    if m:
+        return " ".join(m.groups())
+    return re.sub(r"\s+", " ", valeur).strip().upper()
+
+
+def texte_en_majuscules(valeur: Optional[str]) -> Optional[str]:
+    """Espaces resserrées, majuscules. Vide ou absent : inchangé. Sert au VIN."""
     if not valeur or not valeur.strip():
         return valeur
     return re.sub(r"\s+", " ", valeur).strip().upper()
 
 
 class PlaqueNormalisee:
-    """Plaque d'immatriculation en majuscules, à l'ÉCRITURE seulement.
+    """Plaque d'immatriculation normalisée (`plaque_normalisee`), à l'ÉCRITURE seulement.
 
     À poser sur les schémas de création et de modification qui portent
     `licensePlate` (véhicules des clients, véhicules de prêt), pas sur les
@@ -108,7 +138,7 @@ class PlaqueNormalisee:
     @field_validator("licensePlate", mode="after", check_fields=False)
     @classmethod
     def _license_plate(cls, v):
-        return plaque_en_majuscules(v)
+        return plaque_normalisee(v)
 
 
 T = TypeVar("T")

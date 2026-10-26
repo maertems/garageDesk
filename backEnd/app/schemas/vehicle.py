@@ -1,4 +1,6 @@
-from app.schemas.common import CamelModel, PlaqueNormalisee
+from pydantic import field_validator
+
+from app.schemas.common import CamelModel, PlaqueNormalisee, texte_en_majuscules
 from typing import Optional
 from datetime import date
 
@@ -15,11 +17,20 @@ class VehicleBase(CamelModel):
     registrationDate: Optional[date] = None  # 1ère mise en circulation
 
 
-class VehicleCreate(PlaqueNormalisee, VehicleBase):
+class VinNormalise:
+    """Numéro de série en majuscules, à l'écriture seulement."""
+
+    @field_validator("vin", mode="after", check_fields=False)
+    @classmethod
+    def _vin(cls, v):
+        return texte_en_majuscules(v)
+
+
+class VehicleCreate(PlaqueNormalisee, VinNormalise, VehicleBase):
     pass
 
 
-class VehicleUpdate(PlaqueNormalisee, CamelModel):
+class VehicleUpdate(PlaqueNormalisee, VinNormalise, CamelModel):
     brand: Optional[str] = None
     model: Optional[str] = None
     licensePlate: Optional[str] = None
