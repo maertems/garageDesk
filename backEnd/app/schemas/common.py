@@ -130,6 +130,8 @@ def telephone_normalise(valeur: Optional[str]) -> Optional[str]:
 
     Espaces, points, tirets et parenthèses sont retirés ; ce qui reste doit être
     des chiffres, précédés au besoin d'un « + ». Autre chose : refusé (422).
+    Un numéro français en international (« +33 6… », « +33 (0)6… ») est ramené au
+    format national « 06… » ; les autres indicatifs (+32…) sont gardés tels quels.
     Vide ou absent : inchangé.
     """
     if not valeur or not valeur.strip():
@@ -137,6 +139,9 @@ def telephone_normalise(valeur: Optional[str]) -> Optional[str]:
     colle = re.sub(r"[\s.\-()]", "", valeur)
     if not re.fullmatch(r"\+?\d+", colle):
         raise PydanticCustomError("phone", TELEPHONE_MESSAGE)
+    national = re.fullmatch(r"\+330?(\d+)", colle)
+    if national:
+        return "0" + national.group(1)
     return colle
 
 
