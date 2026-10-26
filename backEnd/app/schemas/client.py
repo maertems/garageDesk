@@ -1,4 +1,4 @@
-from app.schemas.common import CamelModel
+from app.schemas.common import CamelModel, telephone_normalise
 from app.schemas.vehicle import VehicleResponse
 import re
 from datetime import datetime
@@ -73,6 +73,12 @@ class _NomsNormalises:
     @classmethod
     def _first_name(cls, v):
         return prenom_capitalise(v)
+
+    # Téléphone collé, chiffres et « + » initial seulement (§ 101).
+    @field_validator("phone", mode="after", check_fields=False)
+    @classmethod
+    def _phone(cls, v):
+        return telephone_normalise(v)
 
 
 class ClientCreate(_NomsNormalises, ClientBase):

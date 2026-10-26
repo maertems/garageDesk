@@ -122,6 +122,24 @@ def plaque_normalisee(valeur: Optional[str]) -> Optional[str]:
     return re.sub(r"\s+", " ", valeur).strip().upper()
 
 
+TELEPHONE_MESSAGE = "Téléphone : chiffres seulement, précédés au besoin d'un « + » (ex. 0634343434 ou +32475123456)."
+
+
+def telephone_normalise(valeur: Optional[str]) -> Optional[str]:
+    """Numéro collé : « 06.34.34.34.34 » → « 0634343434 », « +32 475 12 34 56 » → « +32475123456 ».
+
+    Espaces, points, tirets et parenthèses sont retirés ; ce qui reste doit être
+    des chiffres, précédés au besoin d'un « + ». Autre chose : refusé (422).
+    Vide ou absent : inchangé.
+    """
+    if not valeur or not valeur.strip():
+        return valeur
+    colle = re.sub(r"[\s.\-()]", "", valeur)
+    if not re.fullmatch(r"\+?\d+", colle):
+        raise PydanticCustomError("phone", TELEPHONE_MESSAGE)
+    return colle
+
+
 def texte_en_majuscules(valeur: Optional[str]) -> Optional[str]:
     """Espaces resserrées, majuscules. Vide ou absent : inchangé. Sert au VIN."""
     if not valeur or not valeur.strip():
