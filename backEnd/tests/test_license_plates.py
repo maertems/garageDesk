@@ -21,6 +21,10 @@ from app.schemas.vehicle import VehicleCreate, VehicleResponse, VehicleUpdate
         ("12 aze 59", "12 AZE 59"),
         ("1234-AB-75", "1234 AB 75"),
         ("1a59", "1 A 59"),
+        # FNI Corse : département 2A / 2B.
+        ("1234ab2a", "1234 AB 2A"),
+        ("1234 AB 2B", "1234 AB 2B"),
+        ("12-a-2a", "12 A 2A"),
         # Non reconnu : majuscules, espaces resserrées, séparateurs gardés.
         ("w  garage", "W GARAGE"),
         ("b-ab-1234", "B-AB-1234"),

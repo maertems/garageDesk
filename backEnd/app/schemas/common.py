@@ -91,8 +91,9 @@ class CamelModel(BaseModel):
 _PLAQUE_AUTORISEE = re.compile(r"^[A-Za-z0-9\-\s]+$")
 # Format SIV (depuis 2009), séparateurs retirés : AB123CD → AB-123-CD.
 _PLAQUE_SIV = re.compile(r"^([A-Z]{2})(\d{3})([A-Z]{2})$")
-# Ancien format FNI, séparateurs retirés : 12AZE59 → 12 AZE 59.
-_PLAQUE_FNI = re.compile(r"^(\d{1,4})([A-Z]{1,3})(\d{2,3})$")
+# Ancien format FNI, séparateurs retirés : 12AZE59 → 12 AZE 59. Le département
+# final est un nombre, ou 2A / 2B pour la Corse : 1234AB2A → 1234 AB 2A.
+_PLAQUE_FNI = re.compile(r"^(\d{1,4})([A-Z]{1,3})(\d{2,3}|2A|2B)$")
 
 PLAQUE_MESSAGE = "Plaque d'immatriculation : seuls les lettres, les chiffres, le tiret et l'espace sont acceptés."
 
@@ -101,7 +102,8 @@ def plaque_normalisee(valeur: Optional[str]) -> Optional[str]:
     """Plaque en majuscules, au format officiel quand il est reconnu.
 
     - « ab123cd », « AB 123 CD », « ab-123-cd » → « AB-123-CD » (SIV, tirets) ;
-    - « 12aze59 », « 12 AZE 59 » → « 12 AZE 59 » (FNI, espaces) ;
+    - « 12aze59 », « 12 AZE 59 » → « 12 AZE 59 » (FNI, espaces), Corse comprise
+      (« 1234ab2a » → « 1234 AB 2A ») ;
     - autre chose (plaque étrangère, garage…) : espaces resserrées, majuscules ;
     - un caractère hors lettres, chiffres, tiret, espace : refusé (422) ;
     - vide ou absent : inchangé.
