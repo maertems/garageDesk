@@ -149,7 +149,33 @@ def get_current_user(
             status_code=401,
             detail={"code": "unauthorized", "message": "Invalid or expired session"},
         )
+    if user.get("role") == ROLE_READONLY and not _lecture(request):
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "readOnly", "message": "This account can only read data"},
+        )
     return user
+
+
+# ---------------------------------------------------------------------------
+# Rôle « readonly » (§ 104) : un compte pour un logiciel tiers qui consulte
+# l'intranet sans jamais y écrire.
+#
+# La règle est posée ICI, dans la dépendance que toutes les routes partagent
+# (seule `/auth/login` n'en dépend pas) : une route oubliée dans un routeur
+# serait quand même couverte. Les méthodes de lecture passent ; les autres sont
+# refusées en 403 avant tout accès à la base. Deux exceptions en écriture :
+# `/auth/login`, qui ne passe pas ici, et `/auth/logout`, pour que le compte
+# puisse fermer sa session.
+# ---------------------------------------------------------------------------
+ROLE_READONLY = "readonly"
+_METHODES_LECTURE = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def _lecture(request: Request) -> bool:
+    if request.method in _METHODES_LECTURE:
+        return True
+    return request.url.path.endswith("/auth/logout")
 
 
 async def get_current_admin(current_user: dict = Depends(get_current_user)) -> dict:
