@@ -23,10 +23,13 @@ export default async function LeavePage() {
   const session = verifierSession(cookie);
   // Les salariés sont rendus ici, et non plus cherchés par le navigateur : le
   // formulaire de congé s'ouvrait sur une liste de salariés vide le temps de
-  // l'appel.
-  const [requests, employees] = await Promise.all([
+  // l'appel. Le rôle est rendu de la même façon : les actions de validation et
+  // de suppression n'apparaissent que pour un administrateur, sans attendre un
+  // appel supplémentaire depuis le navigateur.
+  const [requests, employees, user] = await Promise.all([
     apiJson<LeaveRequest[]>("/api/v1/leaveRequests", cookie).catch(() => [] as LeaveRequest[]),
     apiJson<Employee[]>("/api/v1/employees", cookie).catch(() => [] as Employee[]),
+    apiJson<{ role?: string }>("/api/v1/auth/me", cookie).catch(() => null),
   ]);
 
   if (!(await session)) redirect("/login");
@@ -35,6 +38,7 @@ export default async function LeavePage() {
     <LeaveRequestsList
       initialRequests={Array.isArray(requests) ? requests : []}
       initialEmployees={Array.isArray(employees) ? employees : []}
+      canManage={user?.role === "admin"}
     />
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { CalendarOff, Plus } from "lucide-react";
+import { useState } from "react";
+import { Ban, CalendarOff, Check, Pencil, Plus, Trash2 } from "lucide-react";
 import { getLabel, leaveRequestStatusLabels } from "@/lib/labels";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,25 +36,54 @@ type LeaveRequest = {
 };
 type Employee = { id: number; firstName: string; lastName: string };
 
+/** Message d'erreur renvoyé par l'API (`{ code, message }` dans `detail`). */
+async function errorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const data = await res.json();
+    return data.detail?.message ?? data.message ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export default function LeaveRequestsList({
   initialRequests = [],
   initialEmployees = [],
+  canManage = false,
 }: {
   initialRequests?: LeaveRequest[];
   initialEmployees?: Employee[];
+  canManage?: boolean;
 }) {
   const [requests, setRequests] = useState<LeaveRequest[]>(initialRequests);
-  const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
+  const [employees] = useState<Employee[]>(initialEmployees);
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
   const [showForm, setShowForm] = useState(false);
   const [newEmpId, setNewEmpId] = useState(0);
   const [newStart, setNewStart] = useState("");
   const [newEnd, setNewEnd] = useState("");
+  const [editing, setEditing] = useState<LeaveRequest | null>(null);
+  const [editStart, setEditStart] = useState("");
+  const [editEnd, setEditEnd] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Les deux appels du montage ont disparu : ils rechargeaient une liste que le
-  // serveur venait de rendre, et le formulaire s'ouvrait sur un choix de salariés
-  // vide le temps du second.
+  // Le serveur joint le salarié à chaque demande : c'est la seule source qui
+  // porte son nom. Une réponse de POST ou de PATCH ne le contient pas, d'où le
+  // rechargement de la liste après chaque écriture — sinon la ligne ajoutée
+  // s'affichait sans nom (et non triée).
+  async function reload() {
+    const res = await fetch("/api/proxy/leaveRequests", { cache: "no-store" });
+    if (!res.ok) {
+      setError(await errorMessage(res, "Impossible de recharger les demandes."));
+      return;
+    }
+    const data = await res.json();
+    if (Array.isArray(data)) setRequests(data);
+  }
+
   const filtered = requests.filter((r) => {
     const start = new Date(r.startDate);
     const end = new Date(r.endDate);
@@ -66,20 +95,93 @@ export default function LeaveRequestsList({
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
+    setBusy(true);
+    setError(null);
     const res = await fetch("/api/proxy/leaveRequests", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ employeeId: newEmpId, startDate: newStart, endDate: newEnd }),
     });
-    if (res.ok) {
-      const created = await res.json();
-      setRequests((prev) => [...prev, created]);
-      setShowForm(false);
-      setNewEmpId(0);
-      setNewStart("");
-      setNewEnd("");
+    if (!res.ok) {
+      setError(await errorMessage(res, "Impossible d'enregistrer la demande."));
+      setBusy(false);
+      return;
     }
+    // Se placer sur le mois de la demande créée, sinon la ligne peut rester
+    // invisible (le filtre est appliqué côté navigateur).
+    const start = new Date(newStart);
+    if (!Number.isNaN(start.getTime())) {
+      setMonth(start.getMonth() + 1);
+      setYear(start.getFullYear());
+    }
+    await reload();
+    setBusy(false);
+    setShowForm(false);
+    setNewEmpId(0);
+    setNewStart("");
+    setNewEnd("");
   }
+
+  function openEdit(r: LeaveRequest) {
+    setError(null);
+    setEditing(r);
+    setEditStart(r.startDate.slice(0, 10));
+    setEditEnd(r.endDate.slice(0, 10));
+  }
+
+  async function handleEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editing) return;
+    setBusy(true);
+    setError(null);
+    const res = await fetch(`/api/proxy/leaveRequests/${editing.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ startDate: editStart, endDate: editEnd }),
+    });
+    if (!res.ok) {
+      setError(await errorMessage(res, "Impossible de modifier la demande."));
+      setBusy(false);
+      return;
+    }
+    await reload();
+    setBusy(false);
+    setEditing(null);
+  }
+
+  async function changeStatus(r: LeaveRequest, status: string) {
+    setBusyId(r.id);
+    setError(null);
+    const res = await fetch(`/api/proxy/leaveRequests/${r.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) {
+      setError(await errorMessage(res, "Impossible de changer le statut."));
+      setBusyId(null);
+      return;
+    }
+    await reload();
+    setBusyId(null);
+  }
+
+  async function handleDelete(r: LeaveRequest) {
+    if (!confirm("Supprimer cette demande de congé ?")) return;
+    setBusyId(r.id);
+    setError(null);
+    const res = await fetch(`/api/proxy/leaveRequests/${r.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      setError(await errorMessage(res, "Impossible de supprimer la demande."));
+      setBusyId(null);
+      return;
+    }
+    setRequests((prev) => prev.filter((x) => x.id !== r.id));
+    setBusyId(null);
+  }
+
+  const employeeName = (r: LeaveRequest) =>
+    [r.employeeLastName, r.employeeFirstName].filter(Boolean).join(" ");
 
   const monthLabel = new Date(year, month - 1, 1).toLocaleDateString("fr-FR", {
     month: "long",
@@ -92,7 +194,7 @@ export default function LeaveRequestsList({
         title="Congés"
         description="Demandes de congés des salariés"
         actions={
-          <Button onClick={() => setShowForm(true)}>
+          <Button onClick={() => { setError(null); setShowForm(true); }}>
             <Plus className="h-4 w-4" />
             Nouvelle demande
           </Button>
@@ -127,6 +229,12 @@ export default function LeaveRequestsList({
           </span>
         </div>
 
+        {error && (
+          <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        )}
+
         {filtered.length === 0 ? (
           <EmptyState
             icon={<CalendarOff className="h-5 w-5" />}
@@ -142,35 +250,98 @@ export default function LeaveRequestsList({
                   <TableHead>Début</TableHead>
                   <TableHead>Fin</TableHead>
                   <TableHead>Statut</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((r, idx) => (
-                  <TableRow key={r.id} className={idx % 2 === 1 ? "bg-primary/10 hover:bg-primary/15" : "hover:bg-accent/40"}>
-                    <TableCell className="font-medium">
-                      {r.employeeFirstName} {r.employeeLastName}
-                    </TableCell>
-                    <TableCell className="tabular-nums text-muted-foreground">
-                      {new Date(r.startDate).toLocaleDateString("fr-FR")}
-                    </TableCell>
-                    <TableCell className="tabular-nums text-muted-foreground">
-                      {new Date(r.endDate).toLocaleDateString("fr-FR")}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          r.status === "approved"
-                            ? "success"
-                            : r.status === "cancelled"
-                              ? "destructive"
-                              : "warning"
-                        }
-                      >
-                        {getLabel(leaveRequestStatusLabels, r.status)}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {filtered.map((r, idx) => {
+                  const rowBusy = busyId === r.id;
+                  // Un salarié peut corriger les dates d'une demande encore en
+                  // attente ; un administrateur peut aussi modifier une demande
+                  // déjà traitée.
+                  const canEdit = canManage || r.status === "pending";
+                  return (
+                    <TableRow key={r.id} className={idx % 2 === 1 ? "bg-primary/10 hover:bg-primary/15" : "hover:bg-accent/40"}>
+                      <TableCell className="font-medium">{employeeName(r)}</TableCell>
+                      <TableCell className="tabular-nums text-muted-foreground">
+                        {new Date(r.startDate).toLocaleDateString("fr-FR")}
+                      </TableCell>
+                      <TableCell className="tabular-nums text-muted-foreground">
+                        {new Date(r.endDate).toLocaleDateString("fr-FR")}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            r.status === "approved"
+                              ? "success"
+                              : r.status === "cancelled"
+                                ? "destructive"
+                                : "warning"
+                          }
+                        >
+                          {getLabel(leaveRequestStatusLabels, r.status)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right whitespace-nowrap">
+                        {canEdit && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openEdit(r)}
+                            disabled={rowBusy}
+                            aria-label="Modifier"
+                            title="Modifier"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canManage && r.status === "pending" && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => changeStatus(r, "approved")}
+                            disabled={rowBusy}
+                            className="text-muted-foreground hover:text-emerald-600"
+                            aria-label="Valider"
+                            title="Valider"
+                          >
+                            <Check className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canManage && r.status !== "cancelled" && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => changeStatus(r, "cancelled")}
+                            disabled={rowBusy}
+                            className="text-muted-foreground hover:text-amber-600"
+                            aria-label="Annuler la demande"
+                            title="Annuler la demande"
+                          >
+                            <Ban className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canManage && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDelete(r)}
+                            disabled={rowBusy}
+                            className="text-muted-foreground hover:text-destructive"
+                            aria-label="Supprimer"
+                            title="Supprimer"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -178,7 +349,7 @@ export default function LeaveRequestsList({
       </PageBody>
 
       {showForm && (
-        <Dialog open onOpenChange={(o) => !o && setShowForm(false)}>
+        <Dialog open onOpenChange={(o) => !o && !busy && setShowForm(false)}>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Nouvelle demande de congé</DialogTitle>
@@ -225,10 +396,55 @@ export default function LeaveRequestsList({
               </div>
             </form>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowForm(false)}>
+              <Button variant="outline" onClick={() => setShowForm(false)} disabled={busy}>
                 Annuler
               </Button>
-              <Button onClick={handleCreate}>Enregistrer</Button>
+              <Button onClick={handleCreate} disabled={busy}>
+                Enregistrer
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {editing && (
+        <Dialog open onOpenChange={(o) => !o && !busy && setEditing(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Modifier la demande</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleEdit} className="px-6 py-4 space-y-4">
+              <p className="text-sm text-muted-foreground">{employeeName(editing)}</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="editStart">Début</Label>
+                  <Input
+                    id="editStart"
+                    type="date"
+                    value={editStart}
+                    onChange={(e) => setEditStart(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="editEnd">Fin</Label>
+                  <Input
+                    id="editEnd"
+                    type="date"
+                    value={editEnd}
+                    onChange={(e) => setEditEnd(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+            </form>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditing(null)} disabled={busy}>
+                Annuler
+              </Button>
+              <Button onClick={handleEdit} disabled={busy}>
+                Enregistrer
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

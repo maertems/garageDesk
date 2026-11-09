@@ -27,7 +27,13 @@ def list_leave_requests(
             conditions.append("lr.employeeId = %s")
             params.append(employee_id)
         if month is not None and year is not None:
-            conditions.append("(MONTH(lr.startDate) = %s AND YEAR(lr.startDate) = %s) OR (MONTH(lr.endDate) = %s AND YEAR(lr.endDate) = %s)")
+            # Les parenthèses englobent le OR : sans elles, un filtre `status`
+            # ou `employeeId` ajouté par `AND` ne portait que sur la seconde
+            # moitié de la condition (priorité de AND sur OR).
+            conditions.append(
+                "((MONTH(lr.startDate) = %s AND YEAR(lr.startDate) = %s)"
+                " OR (MONTH(lr.endDate) = %s AND YEAR(lr.endDate) = %s))"
+            )
             params.extend([month, year, month, year])
         if status:
             conditions.append("lr.status = %s")
