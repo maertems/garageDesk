@@ -180,8 +180,30 @@ export default function LeaveRequestsList({
     setBusyId(null);
   }
 
+  // Le garage reconnaît les salariés à leur prénom : c'est déjà le libellé du
+  // calendrier. Le nom complet reste en infobulle et dans le choix du salarié.
   const employeeName = (r: LeaveRequest) =>
+    r.employeeFirstName?.trim() || `Salarié #${r.employeeId}`;
+
+  const employeeFullName = (r: LeaveRequest) =>
     [r.employeeLastName, r.employeeFirstName].filter(Boolean).join(" ");
+
+  /** Date du jour au format `YYYY-MM-DD`, en heure locale (pas UTC). */
+  function todayIso(): string {
+    const d = new Date();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${d.getFullYear()}-${month}-${day}`;
+  }
+
+  function openCreate() {
+    setError(null);
+    // Pré-remplies à aujourd'hui : la plupart des demandes sont saisies le jour
+    // même, et le champ restait vide à chaque ouverture.
+    setNewStart(todayIso());
+    setNewEnd(todayIso());
+    setShowForm(true);
+  }
 
   const monthLabel = new Date(year, month - 1, 1).toLocaleDateString("fr-FR", {
     month: "long",
@@ -194,7 +216,7 @@ export default function LeaveRequestsList({
         title="Congés"
         description="Demandes de congés des salariés"
         actions={
-          <Button onClick={() => { setError(null); setShowForm(true); }}>
+          <Button onClick={openCreate}>
             <Plus className="h-4 w-4" />
             Nouvelle demande
           </Button>
@@ -262,7 +284,9 @@ export default function LeaveRequestsList({
                   const canEdit = canManage || r.status === "pending";
                   return (
                     <TableRow key={r.id} className={idx % 2 === 1 ? "bg-primary/10 hover:bg-primary/15" : "hover:bg-accent/40"}>
-                      <TableCell className="font-medium">{employeeName(r)}</TableCell>
+                      <TableCell className="font-medium" title={employeeFullName(r) || undefined}>
+                        {employeeName(r)}
+                      </TableCell>
                       <TableCell className="tabular-nums text-muted-foreground">
                         {new Date(r.startDate).toLocaleDateString("fr-FR")}
                       </TableCell>
@@ -414,7 +438,7 @@ export default function LeaveRequestsList({
               <DialogTitle>Modifier la demande</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleEdit} className="px-6 py-4 space-y-4">
-              <p className="text-sm text-muted-foreground">{employeeName(editing)}</p>
+              <p className="text-sm text-muted-foreground">{employeeFullName(editing)}</p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="editStart">Début</Label>
